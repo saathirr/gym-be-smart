@@ -5,49 +5,7 @@ export const membershipService = {
   async getMemberships() {
     if (!isSupabaseConfigured) {
       const stored = localStorage.getItem('be_smart_memberships');
-      if (stored) return JSON.parse(stored);
-      return [
-        {
-          id: 'sub-1',
-          member_name: 'Marcus Vance',
-          member_code: 'BSG-1001',
-          plan_name: 'VIP Annual',
-          start_date: '2026-01-10',
-          end_date: addDays(new Date(), 335).toISOString().split('T')[0],
-          status: 'Active',
-          amount: 449.00,
-        },
-        {
-          id: 'sub-2',
-          member_name: 'Elena Rostova',
-          member_code: 'BSG-1002',
-          plan_name: 'Gold Quarterly',
-          start_date: '2026-07-01',
-          end_date: addDays(new Date(), 30).toISOString().split('T')[0],
-          status: 'Active',
-          amount: 129.00,
-        },
-        {
-          id: 'sub-3',
-          member_name: 'James Wilson',
-          member_code: 'BSG-1005',
-          plan_name: 'Basic Monthly',
-          start_date: '2026-08-20',
-          end_date: addDays(new Date(), 2).toISOString().split('T')[0],
-          status: 'Expiring',
-          amount: 49.00,
-        },
-        {
-          id: 'sub-4',
-          member_name: 'Alex Rivera',
-          member_code: 'BSG-1006',
-          plan_name: 'Student Monthly',
-          start_date: '2026-08-01',
-          end_date: new Date().toISOString().split('T')[0],
-          status: 'Expiring',
-          amount: 35.00,
-        },
-      ];
+      return stored ? JSON.parse(stored) : [];
     }
 
     const { data, error } = await supabase
@@ -83,7 +41,7 @@ export const membershipService = {
     }));
   },
 
-  async renewMembership(memberId, planId, durationDays = 30, amount = 49) {
+  async renewMembership(memberId, planId, durationDays = 30, amount = 5000) {
     const startDate = new Date().toISOString().split('T')[0];
     const endDate = addDays(new Date(), durationDays).toISOString().split('T')[0];
 

@@ -1,14 +1,14 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-// Fallback seed plans if Supabase is not configured yet
-const fallbackPlans = [
+// Initial plan tiers in LKR (Sri Lankan Rupees)
+const defaultPlansLKR = [
   {
     id: 'plan-1',
     name: 'Basic Monthly',
     description: 'Standard gym floor access and cardio zone',
     duration_days: 30,
-    price: 49.00,
-    features: ['Gym Floor', 'Cardio Zone', 'Locker Room'],
+    price: 5000.00,
+    features: ['Gym Floor Access', 'Cardio Zone', 'Locker Room'],
     is_active: true,
   },
   {
@@ -16,26 +16,26 @@ const fallbackPlans = [
     name: 'Gold Quarterly',
     description: 'Full access including group classes and sauna',
     duration_days: 90,
-    price: 129.00,
-    features: ['Gym Floor', 'Group Classes', 'Sauna', '1 Guest Pass/Mo'],
+    price: 13500.00,
+    features: ['Gym Floor Access', 'Group Fitness Classes', 'Steam & Sauna', '1 Guest Pass / Month'],
     is_active: true,
   },
   {
     id: 'plan-3',
     name: 'VIP Annual',
-    description: 'All access VIP membership with free towel service',
+    description: 'All-access VIP membership with complimentary towel service',
     duration_days: 365,
-    price: 449.00,
-    features: ['24/7 Access', 'All Facilities', 'Free Towel Service', 'Free Drinks', 'Unlimited Guest Passes'],
+    price: 45000.00,
+    features: ['24/7 Priority Access', 'All Gym Facilities', 'Free Towel & Drinks', 'Unlimited Guest Passes'],
     is_active: true,
   },
   {
     id: 'plan-4',
     name: 'Personal Training',
-    description: 'Dedicated 1-on-1 coaching package',
+    description: 'Dedicated 1-on-1 certified coaching package',
     duration_days: 30,
-    price: 199.00,
-    features: ['12 PT Sessions', 'Custom Nutrition Plan', 'Body Comp Tracking'],
+    price: 20000.00,
+    features: ['12 PT Sessions', 'Custom Nutrition Plan', 'Body Composition Tracking'],
     is_active: true,
   },
 ];
@@ -44,7 +44,7 @@ export const planService = {
   async getPlans() {
     if (!isSupabaseConfigured) {
       const stored = localStorage.getItem('be_smart_plans');
-      return stored ? JSON.parse(stored) : fallbackPlans;
+      return stored ? JSON.parse(stored) : defaultPlansLKR;
     }
 
     const { data, error } = await supabase
@@ -54,9 +54,10 @@ export const planService = {
 
     if (error) {
       console.error('Error fetching plans:', error);
-      return fallbackPlans;
+      return defaultPlansLKR;
     }
-    return data || fallbackPlans;
+
+    return (data && data.length > 0) ? data : defaultPlansLKR;
   },
 
   async createPlan(planData) {

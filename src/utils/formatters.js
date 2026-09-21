@@ -1,11 +1,15 @@
 import { format, parseISO } from 'date-fns';
 
-export function formatCurrency(amount, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
+export function formatCurrency(amount, currency = 'LKR') {
+  const num = Number(amount) || 0;
+  return new Intl.NumberFormat('en-LK', {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
-  }).format(amount || 0);
+  })
+    .format(num)
+    .replace('LKR', 'Rs.')
+    .replace('SLRs', 'Rs.');
 }
 
 export function formatDate(dateString, pattern = 'MMM dd, yyyy') {

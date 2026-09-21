@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -19,9 +19,11 @@ import {
   ChevronDown,
   ShieldCheck,
   Building2,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { cn } from '../utils/cn';
+import { formatDate } from '../utils/formatters';
 
 const navItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -38,8 +40,18 @@ const navItems = [
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { user, logout, isConfigured } = useAuth();
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  // Live Ticking Clock Effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -68,21 +80,21 @@ export function DashboardLayout() {
         )}
       >
         {/* Brand Header */}
-        <div className="h-16 px-6 flex items-center justify-between border-b border-gym-800/80">
+        <div className="h-16 px-5 flex items-center justify-between border-b border-gym-800/80">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-lg shadow-sky-500/20">
               <Dumbbell className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-slate-100 tracking-tight text-base">
+              <div className="flex items-center gap-1">
+                <span className="font-extrabold text-slate-100 tracking-tight text-sm">
                   BE SMART
                 </span>
-                <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-brand-cyan/20 text-brand-cyan rounded border border-brand-cyan/30">
-                  GYM
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-brand-cyan/20 text-brand-cyan rounded border border-brand-cyan/30 uppercase">
+                  CLUB
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-medium">Management System</p>
+              <p className="text-[10px] text-slate-400 font-medium">Fitness Club System</p>
             </div>
           </div>
           <button
@@ -98,7 +110,7 @@ export function DashboardLayout() {
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-gym-800 text-xs">
             <div className="flex items-center gap-2 text-slate-300 font-medium">
               <Building2 className="w-4 h-4 text-brand-cyan shrink-0" />
-              <span className="truncate">Main Facility HQ</span>
+              <span className="truncate">Sri Lanka HQ</span>
             </div>
             <span className="w-2 h-2 rounded-full bg-brand-emerald animate-pulse"></span>
           </div>
@@ -171,8 +183,23 @@ export function DashboardLayout() {
               <Menu className="w-5 h-5" />
             </button>
 
+            {/* Brand Logo & Name Header */}
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20">
+                <Dumbbell className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
+                  Be Smart Fitness Club
+                </h1>
+                <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block">
+                  Sri Lanka Gym Management System
+                </p>
+              </div>
+            </div>
+
             {/* Quick Search */}
-            <div className="relative hidden sm:block w-64 md:w-80">
+            <div className="relative hidden xl:block w-64 ml-4">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -182,12 +209,19 @@ export function DashboardLayout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {!isConfigured && (
-              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                Demo Auth Mode
-              </span>
-            )}
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Live Ticking Clock (Sri Lanka Local Time) */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 border border-gym-800 text-xs font-mono text-brand-cyan shadow-inner">
+              <Clock className="w-4 h-4 text-brand-cyan animate-pulse shrink-0" />
+              <div className="text-right leading-tight">
+                <span className="font-bold text-slate-100 block">
+                  {currentTime.toLocaleTimeString('en-LK', { hour12: true })}
+                </span>
+                <span className="text-[9px] text-slate-400 block font-sans">
+                  {formatDate(currentTime, 'EEE, MMM dd')}
+                </span>
+              </div>
+            </div>
 
             {/* Notifications */}
             <button className="p-2 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-gym-800/80 relative">
@@ -206,9 +240,9 @@ export function DashboardLayout() {
                 </div>
                 <div className="hidden md:block text-left">
                   <p className="text-xs font-semibold text-slate-200 leading-tight">
-                    {user?.user_metadata?.full_name || 'Admin User'}
+                    {user?.full_name || 'Admin User'}
                   </p>
-                  <p className="text-[10px] text-slate-400">{user?.email || 'admin@besmartgym.com'}</p>
+                  <p className="text-[10px] text-slate-400">{user?.email || 'admin@besmartfitness.lk'}</p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-slate-400 hidden md:block" />
               </button>
@@ -220,7 +254,7 @@ export function DashboardLayout() {
                 >
                   <div className="px-4 py-2.5 border-b border-gym-800">
                     <p className="text-xs font-semibold text-slate-200">
-                      {user?.user_metadata?.full_name || 'Admin User'}
+                      {user?.full_name || 'Admin User'}
                     </p>
                     <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
                   </div>

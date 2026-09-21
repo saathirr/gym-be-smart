@@ -1,5 +1,5 @@
 -- =====================================================================
--- BE SMART GYM MANAGEMENT SYSTEM - SUPABASE DATABASE SCHEMA & RLS SETUP
+-- BE SMART FITNESS CLUB - SUPABASE DATABASE SCHEMA & RLS SETUP
 -- Execute this entire script inside the Supabase SQL Editor
 -- =====================================================================
 
@@ -40,7 +40,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =====================================================================
--- TABLE: plans (Membership Subscription Tiers)
+-- TABLE: plans (Membership Subscription Tiers in LKR)
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS public.plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS public.attendance (
 );
 
 -- =====================================================================
--- TABLE: payments (Financial Audit & Receipts)
+-- TABLE: payments (Financial Audit & Receipts in LKR)
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS public.payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -209,13 +209,12 @@ CREATE POLICY "Authenticated users can update payments" ON public.payments
   FOR UPDATE TO authenticated USING (true);
 
 -- =====================================================================
--- INITIAL SEED DATA FOR QUICK START
+-- INITIAL SUBSCRIPTION PLAN TIERS (IN LKR)
 -- =====================================================================
 
--- Default Subscription Plans
 INSERT INTO public.plans (name, description, duration_days, price, features) VALUES
-('Basic Monthly', 'Standard gym floor access and cardio zone', 30, 49.00, '["Gym Floor", "Cardio Zone", "Locker Room"]'::jsonb),
-('Gold Quarterly', 'Full access including group classes and sauna', 90, 129.00, '["Gym Floor", "Group Classes", "Sauna", "1 Guest Pass/Mo"]'::jsonb),
-('VIP Annual', 'All access VIP membership with free towel service', 365, 449.00, '["24/7 Access", "All Facilities", "Free Towel Service", "Free Drinks", "Unlimited Guest Passes"]'::jsonb),
-('Personal Training', 'Dedicated 1-on-1 coaching package', 30, 199.00, '["12 PT Sessions", "Custom Nutrition Plan", "Body Comp Tracking"]'::jsonb)
+('Basic Monthly', 'Standard gym floor access and cardio zone', 30, 5000.00, '["Gym Floor Access", "Cardio Zone", "Locker Room"]'::jsonb),
+('Gold Quarterly', 'Full access including group fitness classes and sauna', 90, 13500.00, '["Gym Floor Access", "Group Fitness Classes", "Steam & Sauna", "1 Guest Pass / Month"]'::jsonb),
+('VIP Annual', 'All access VIP membership with free towel service', 365, 45000.00, '["24/7 Priority Access", "All Gym Facilities", "Free Towel & Drinks", "Unlimited Guest Passes"]'::jsonb),
+('Personal Training', 'Dedicated 1-on-1 certified coaching package', 30, 20000.00, '["12 PT Sessions", "Custom Nutrition Plan", "Body Composition Tracking"]'::jsonb)
 ON CONFLICT DO NOTHING;

@@ -1,57 +1,10 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-const fallbackPayments = [
-  {
-    id: 'pay-1',
-    receipt_number: 'REC-2026-8812',
-    member_name: 'Marcus Vance',
-    member_code: 'BSG-1001',
-    amount: 449.00,
-    payment_method: 'Card',
-    payment_status: 'Paid',
-    transaction_date: new Date(Date.now() - 2 * 86400000).toISOString(),
-    plan_name: 'VIP Annual',
-  },
-  {
-    id: 'pay-2',
-    receipt_number: 'REC-2026-8813',
-    member_name: 'Elena Rostova',
-    member_code: 'BSG-1002',
-    amount: 129.00,
-    payment_method: 'UPI',
-    payment_status: 'Paid',
-    transaction_date: new Date(Date.now() - 5 * 86400000).toISOString(),
-    plan_name: 'Gold Quarterly',
-  },
-  {
-    id: 'pay-3',
-    receipt_number: 'REC-2026-8814',
-    member_name: 'David Miller',
-    member_code: 'BSG-1003',
-    amount: 49.00,
-    payment_method: 'Cash',
-    payment_status: 'Paid',
-    transaction_date: new Date(Date.now() - 10 * 86400000).toISOString(),
-    plan_name: 'Basic Monthly',
-  },
-  {
-    id: 'pay-4',
-    receipt_number: 'REC-2026-8815',
-    member_name: 'Sophia Chen',
-    member_code: 'BSG-1004',
-    amount: 199.00,
-    payment_method: 'Card',
-    payment_status: 'Paid',
-    transaction_date: new Date(Date.now() - 14 * 86400000).toISOString(),
-    plan_name: 'Personal Training',
-  },
-];
-
 export const paymentService = {
   async getPayments() {
     if (!isSupabaseConfigured) {
       const stored = localStorage.getItem('be_smart_payments');
-      return stored ? JSON.parse(stored) : fallbackPayments;
+      return stored ? JSON.parse(stored) : [];
     }
 
     const { data, error } = await supabase
@@ -70,7 +23,7 @@ export const paymentService = {
 
     if (error) {
       console.error('Error fetching payments:', error);
-      return fallbackPayments;
+      return [];
     }
 
     return (data || []).map((p) => ({
