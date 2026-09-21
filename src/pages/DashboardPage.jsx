@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users,
@@ -10,6 +11,7 @@ import {
   ArrowUpRight,
   Clock,
   CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -27,7 +29,8 @@ import { StatCard } from '../components/common/StatCard';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { dashboardService } from '../services/dashboardService';
 
 const attendanceData = [
   { day: 'Mon', count: 142 },
@@ -47,21 +50,33 @@ const revenueData = [
   { month: 'Sep', revenue: 19450 },
 ];
 
-const recentCheckIns = [
-  { id: '1', name: 'Marcus Vance', plan: 'Gold Annual', time: '10 mins ago', status: 'Active' },
-  { id: '2', name: 'Elena Rostova', plan: 'VIP Monthly', time: '24 mins ago', status: 'Active' },
-  { id: '3', name: 'David Miller', plan: 'Silver Quarterly', time: '42 mins ago', status: 'Active' },
-  { id: '4', name: 'Sophia Chen', plan: 'Personal Training', time: '1 hour ago', status: 'Active' },
-];
-
-const expiringMemberships = [
-  { id: 'm1', name: 'James Wilson', plan: 'Basic Monthly', expires: 'In 2 days', phone: '+1 555-0192' },
-  { id: 'm2', name: 'Sarah Jenkins', plan: 'Gold Quarterly', expires: 'In 4 days', phone: '+1 555-0144' },
-  { id: 'm3', name: 'Alex Rivera', plan: 'Student Plan', expires: 'Today', phone: '+1 555-0178' },
-];
-
 export function DashboardPage() {
+  const [summary, setSummary] = useState({
+    activeMembersCount: 0,
+    todayAttendanceCount: 0,
+    totalRevenue: 0,
+    expiringCount: 0,
+    recentCheckIns: [],
+    expiringMemberships: [],
+  });
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const data = await dashboardService.getDashboardSummary();
+      setSummary(data);
+    } catch (err) {
+      console.error('Error loading dashboard stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -69,6 +84,15 @@ export function DashboardPage() {
         title="Dashboard Overview"
         description="Real-time performance metrics, facility attendance, and financial analytics."
       >
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={RefreshCw}
+          onClick={loadData}
+          disabled={loading}
+        >
+          {loading ? 'Refreshing...' : 'Refresh Stats'}
+        </Button>
         <Button
           variant="primary"
           icon={QrCode}
@@ -82,25 +106,25 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <StatCard
           title="Active Members"
-          value="482"
+          value={loading ? '...' : summary.activeMembersCount.toString()}
           change="+12% this month"
           trend="up"
           icon={Users}
           variant="cyan"
-          subtext="Total enrolled"
+          subtext="Total active subscribers"
         />
         <StatCard
           title="Today's Attendance"
-          value="174"
+          value={loading ? '...' : summary.todayAttendanceCount.toString()}
           change="+8% vs last Mon"
           trend="up"
           icon={CalendarCheck}
           variant="emerald"
-          subtext="Peak hours 5 PM - 8 PM"
+          subtext="Verified check-in logs"
         />
         <StatCard
           title="Monthly Revenue"
-          value={formatCurrency(19450)}
+          value={loading ? '...' : formatCurrency(summary.totalRevenue)}
           change="+15.4%"
           trend="up"
           icon={CircleDollarSign}
@@ -109,7 +133,7 @@ export function DashboardPage() {
         />
         <StatCard
           title="Expiring Soon"
-          value="18"
+          value={loading ? '...' : summary.expiringCount.toString()}
           change="Requires action"
           trend="down"
           icon={AlertTriangle}
@@ -240,29 +264,33 @@ export function DashboardPage() {
             </button>
           </CardHeader>
           <div className="space-y-3">
-            {recentCheckIns.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-gym-700 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
-                    {item.name.charAt(0)}
+            {summary.recentCheckIns.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">No check-in logs recorded today.</p>
+            ) : (
+              summary.recentCheckIns.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-gym-700 transition"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
+                      {item.member_name ? item.member_name.charAt(0) : 'M'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-200">{item.member_name}</p>
+                      <p className="text-xs text-slate-400">{item.plan_name || 'Standard'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-200">{item.name}</p>
-                    <p className="text-xs text-slate-400">{item.plan}</p>
+                  <div className="text-right">
+                    <span className="text-xs text-slate-400 block">{formatDate(item.check_in_time, 'hh:mm a')}</span>
+                    <Badge variant="emerald" className="mt-1">
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Verified
+                    </Badge>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-slate-400 block">{item.time}</span>
-                  <Badge variant="emerald" className="mt-1">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    Verified
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
 
@@ -281,20 +309,24 @@ export function DashboardPage() {
             </button>
           </CardHeader>
           <div className="space-y-3">
-            {expiringMemberships.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-amber-500/30 transition"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-200">{item.name}</p>
-                  <p className="text-xs text-slate-400">{item.plan} • {item.phone}</p>
+            {summary.expiringMemberships.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">No expiring memberships found.</p>
+            ) : (
+              summary.expiringMemberships.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-amber-500/30 transition"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-200">{item.full_name}</p>
+                    <p className="text-xs text-slate-400">{item.plan_name} • {item.phone || 'No phone'}</p>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant="amber">{item.expiration_date || 'Expires Soon'}</Badge>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <Badge variant="amber">{item.expires}</Badge>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
       </div>
