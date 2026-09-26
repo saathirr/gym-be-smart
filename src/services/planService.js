@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 
 export const PLAN_FIELDS =
   'id, name, description, duration_days, price, features, is_active, created_at';
@@ -24,7 +25,7 @@ export const planService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     return (data || []).map(normalize);
   },
@@ -36,7 +37,7 @@ export const planService = {
       .select(PLAN_FIELDS)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return normalize(data);
   },
 
@@ -48,7 +49,7 @@ export const planService = {
       .select(PLAN_FIELDS)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return normalize(data);
   },
 
@@ -60,13 +61,13 @@ export const planService = {
       .select(PLAN_FIELDS)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return normalize(data);
   },
 
   async deletePlan(id) {
     const { error } = await supabase.from('plans').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 };

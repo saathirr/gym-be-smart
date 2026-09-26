@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 import { addDays } from 'date-fns';
 
 const MEMBER_SELECT = `
@@ -89,7 +90,7 @@ export const memberService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     return (data || []).map(withPlanSummary);
   },
@@ -101,7 +102,7 @@ export const memberService = {
       .eq('id', id)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return data ? withPlanSummary(data) : null;
   },
 
@@ -116,7 +117,7 @@ export const memberService = {
       .or(`qr_code_id.eq.${value},member_code.eq.${value}`)
       .limit(1);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     if (!data || data.length === 0) return null;
 
     return withPlanSummary(data[0]);
@@ -124,7 +125,7 @@ export const memberService = {
 
   async createMember(payload, planId) {
     const { data: codeRow, error: codeError } = await supabase.rpc('next_member_code');
-    if (codeError) throw codeError;
+    if (codeError) throw toMessage(codeError, 'Could not generate a member code.');
 
     const memberCode = codeRow;
     const qrCodeId = `${memberCode}.${Date.now().toString(36).toUpperCase()}`;
@@ -153,7 +154,7 @@ export const memberService = {
       .select(MEMBER_SELECT)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     if (planId) {
       const { data: plan, error: planError } = await supabase
@@ -162,7 +163,7 @@ export const memberService = {
         .eq('id', planId)
         .maybeSingle();
 
-      if (planError) throw planError;
+      if (planError) throw toMessage(planError, 'Could not load that plan.');
 
       if (plan) {
         const startDate = new Date().toISOString().slice(0, 10);
@@ -182,13 +183,13 @@ export const memberService = {
           .select('id')
           .single();
 
-        if (membershipError) throw membershipError;
+        if (membershipError) throw toMessage(membershipError, 'Could not start the membership.');
 
         if (Number(plan.price) > 0) {
           const { data: receiptRow, error: receiptError } = await supabase.rpc(
             'next_receipt_number'
           );
-          if (receiptError) throw receiptError;
+          if (receiptError) throw toMessage(receiptError, 'Could not generate a receipt number.');
 
           const { error: paymentError } = await supabase.from('payments').insert([
             {
@@ -202,7 +203,7 @@ export const memberService = {
             },
           ]);
 
-          if (paymentError) throw paymentError;
+          if (paymentError) throw toMessage(paymentError, 'Could not record the payment.');
         }
       }
     }
@@ -231,19 +232,19 @@ export const memberService = {
       .select(MEMBER_SELECT)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return withPlanSummary(data);
   },
 
   async updateMemberStatus(id, status) {
     const { error } = await supabase.from('members').update({ status }).eq('id', id);
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 
   async deleteMember(id) {
     const { error } = await supabase.from('members').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 };

@@ -26,7 +26,7 @@ export const settingsService = {
       .eq('id', true)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw toMessage(error, 'Could not load the club settings.');
 
     return { ...DEFAULT_SETTINGS, ...(data || {}) };
   },
@@ -50,7 +50,7 @@ export const settingsService = {
       .select()
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw toMessage(error, 'Could not save the club settings.');
     return data;
   },
 
@@ -62,7 +62,7 @@ export const settingsService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error, 'Could not load the branches.');
     return data || [];
   },
 
@@ -86,12 +86,12 @@ export const settingsService = {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) throw toMessage(error, 'Could not update that branch.');
       return data;
     }
 
     const { data, error } = await supabase.from('branches').insert([payload]).select().single();
-    if (error) throw error;
+    if (error) throw toMessage(error, 'Could not create that branch.');
     return data;
   },
 

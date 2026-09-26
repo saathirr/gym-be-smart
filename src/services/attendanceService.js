@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 import { memberService } from './memberService';
 
 const ATTENDANCE_SELECT = `
@@ -64,7 +65,7 @@ export const attendanceService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     const logs = (data || []).map(withMember);
 
@@ -84,7 +85,7 @@ export const attendanceService = {
       .select('id', { count: 'exact', head: true })
       .gte('check_in_time', startOfToday());
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return count ?? 0;
   },
 
@@ -94,7 +95,7 @@ export const attendanceService = {
       .select('id', { count: 'exact', head: true })
       .gte('check_in_time', startIso);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return count ?? 0;
   },
 
@@ -144,7 +145,7 @@ export const attendanceService = {
       .select('id, check_in_time, method')
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     return { success: true, member, attendance: data };
   },
@@ -155,13 +156,13 @@ export const attendanceService = {
       .update({ check_out_time: new Date().toISOString() })
       .eq('id', attendanceId);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 
   async deleteLog(id) {
     const { error } = await supabase.from('attendance').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 };

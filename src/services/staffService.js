@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 
 export const staffService = {
   async listStaff() {
@@ -7,13 +8,13 @@ export const staffService = {
       .select('id, email, full_name, role, created_at')
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return data || [];
   },
 
   async updateRole(id, role) {
     const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 

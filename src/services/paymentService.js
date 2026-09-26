@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 
 export const PAYMENT_METHODS = ['Cash', 'Card', 'Bank_Transfer', 'Online'];
 export const PAYMENT_STATUSES = ['Paid', 'Pending', 'Failed', 'Refunded'];
@@ -50,7 +51,7 @@ export const paymentService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     const payments = (data || []).map(withMember);
     if (!search.trim()) return payments;
@@ -72,7 +73,7 @@ export const paymentService = {
     const { data: receiptRow, error: receiptError } = await supabase.rpc(
       'next_receipt_number'
     );
-    if (receiptError) throw receiptError;
+    if (receiptError) throw toMessage(receiptError, 'Could not generate a receipt number.');
 
     const { data, error } = await supabase
       .from('payments')
@@ -89,7 +90,7 @@ export const paymentService = {
       .select(PAYMENT_SELECT)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return withMember(data);
   },
 
@@ -101,7 +102,7 @@ export const paymentService = {
       .select(PAYMENT_SELECT)
       .single();
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return withMember(data);
   },
 };

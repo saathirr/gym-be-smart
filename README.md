@@ -1,141 +1,160 @@
 # Be Smart Gym Management System
 
-A modern, high-performance, responsive Gym Management Web Application built with React, Vite, Tailwind CSS, Lucide Icons, Recharts, and Supabase.
+A responsive Gym Management web application built with React, Vite, Tailwind CSS, Supabase, Recharts and Lucide icons. Handles member tracking, membership subscriptions, QR-code attendance, payment auditing and financial analytics for single- and multi-branch fitness centres.
 
-## System Architecture Overview
+## Key Modules
 
-Be Smart Gym is designed to streamline administrative operations, member tracking, membership subscriptions, attendance scanning via QR code, payment auditing, and financial analytics for single-branch and multi-branch fitness centers.
-
-### Key Modules & Capabilities
-
-1. **Authentication & Role-Based Access**
-   - Secure login via Supabase Auth.
-   - Row Level Security (RLS) enforcement at database layer.
-   - Admin and Staff roles with audit logging.
+1. **Authentication & Roles**
+   - Supabase Auth email/password sign-in.
+   - `admin` and `staff` roles enforced by Row Level Security, plus a `prevent_role_escalation` trigger so nobody can promote themselves.
+   - First-run setup flow that creates the initial admin, then locks itself down.
 
 2. **Dashboard & Analytics**
-   - Key Performance Indicators (Active Members, Daily Attendance, Revenue, Expiring Subscriptions).
-   - Real-time interactive charts (Attendance trends, Revenue breakdowns).
-   - Recent check-in live feeds and expiration alerts.
+   - KPIs: active members, today's attendance, month and total revenue, expiring subscriptions.
+   - Weekly attendance and 6-month revenue charts, recent check-in feed, expiry alerts.
 
 3. **Member Management**
-   - Profile creation with contact details, emergency contacts, medical notes, and assigned plan.
-   - Unique QR code generation for instant check-in scanning.
-   - Membership status tracking (Active, Expiring, Expired, Suspended).
+   - Profiles with contact details, emergency contact, medical notes, branch and plan assignment.
+   - Unique QR code per member, membership status tracking (Active, Expiring, Expired, Suspended).
 
 4. **Attendance & QR Scanner**
-   - Camera-based QR Scanner for rapid check-ins.
-   - Manual check-in fallback with member lookup.
-   - Real-time attendance logging with time-stamps.
+   - Camera-based scanning via `html5-qrcode`, with manual check-in fallback.
+   - Timestamped attendance log, duplicate check-in protection.
 
 5. **Memberships & Plans**
-   - Custom plan definition (Monthly, Quarterly, Annual, VIP, Personal Training).
-   - Automated expiration warnings and renewal workflows.
+   - Custom plans (duration, price, feature list) with active/inactive toggle.
+   - Renewal workflows, expiring-soon warnings, one-open-membership-per-member enforced by a partial unique index.
 
 6. **Payments & Invoicing**
-   - Transaction logging (Cash, Card, UPI/Online).
-   - Receipt generation and payment status audit.
+   - Transaction log with Cash, Card, Bank Transfer and Online methods.
+   - Auto-generated receipt numbers, payment status audit, configurable currency and invoice footer.
 
-7. **Reports & Exports**
-   - Revenue reports, attendance frequency reports, member growth statistics.
+7. **Reports**
+   - Revenue, attendance frequency and member growth reports.
 
-8. **Settings & Configuration**
-   - Gym profile details, operational hours, notification preferences, security settings.
-
----
+8. **Settings**
+   - Club profile, opening hours, currency, invoice footer.
+   - Branch management and staff role management.
 
 ## Project Structure
 
 ```
 Gym/
 ├── .env.example
+├── .htaccess                  # Apache/XAMPP SPA fallback
 ├── index.html
 ├── package.json
 ├── postcss.config.js
+├── supabase_schema.sql        # full schema + RLS, run this first
 ├── tailwind.config.js
+├── vercel.json                # Vercel SPA rewrites
 ├── vite.config.js
-├── README.md
+├── public/
+│   ├── _redirects             # Netlify / Cloudflare Pages SPA fallback
+│   ├── favicon.ico
+│   └── favicon.svg
 └── src/
     ├── main.jsx
-    ├── App.jsx
+    ├── App.jsx                # config gate -> BrowserRouter -> providers
     ├── index.css
     ├── components/
-    │   ├── ui/
-    │   │   ├── Button.jsx
-    │   │   ├── Card.jsx
-    │   │   ├── Input.jsx
-    │   │   ├── Badge.jsx
-    │   │   ├── Modal.jsx
-    │   │   └── Table.jsx
-    │   └── common/
-    │       ├── StatCard.jsx
-    │       └── PageHeader.jsx
+    │   ├── ui/                # Button, Card, Input, Badge, Modal
+    │   └── common/            # StatCard, PageHeader
+    ├── contexts/
+    │   ├── AuthContext.jsx
+    │   ├── AuthContextInstance.js
+    │   ├── GymContext.jsx     # club settings + branches
+    │   └── GymContextInstance.js
+    ├── hooks/
+    │   ├── useAuth.js
+    │   └── useGym.js
     ├── layouts/
     │   ├── DashboardLayout.jsx
     │   └── AuthLayout.jsx
-    ├── pages/
-    │   ├── LoginPage.jsx
-    │   ├── DashboardPage.jsx
-    │   ├── MembersPage.jsx
-    │   ├── AttendancePage.jsx
-    │   ├── QRScannerPage.jsx
-    │   ├── MembershipsPage.jsx
-    │   ├── PlansPage.jsx
-    │   ├── PaymentsPage.jsx
-    │   ├── ReportsPage.jsx
-    │   ├── SettingsPage.jsx
-    │   └── NotFoundPage.jsx
-    ├── features/
-    ├── hooks/
-    │   └── useAuth.js
-    ├── services/
-    │   └── authService.js
     ├── lib/
-    │   └── supabase.js
-    ├── utils/
-    │   ├── cn.js
-    │   └── formatters.js
-    ├── contexts/
-    │   └── AuthContext.jsx
-    └── routes/
-        └── AppRoutes.jsx
+    │   ├── supabase.js        # client, created only when configured
+    │   └── supabaseErrors.js  # error-code -> readable message
+    ├── pages/                 # Dashboard, Members, Memberships, Plans,
+    │                          # Attendance, QRScanner, Payments, Reports,
+    │                          # Settings, Login, Setup, SetupRequired, NotFound
+    ├── routes/
+    │   └── AppRoutes.jsx
+    ├── services/              # one module per domain, all Supabase calls
+    │   ├── authService.js
+    │   ├── memberService.js
+    │   ├── membershipService.js
+    │   ├── planService.js
+    │   ├── attendanceService.js
+    │   ├── paymentService.js
+    │   ├── dashboardService.js
+    │   ├── settingsService.js
+    │   └── staffService.js
+    └── utils/
+        ├── cn.js
+        ├── constants.js
+        └── formatters.js
 ```
-
----
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
-- npm or yarn
+- Node.js v18+
+- A Supabase project
 
 ### Installation
-1. Clone or navigate to the directory:
-   ```bash
-   cd c:/xampp/htdocs/Gym
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Copy environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-4. Configure your Supabase credentials in `.env`:
-   ```env
-   VITE_SUPABASE_URL=https://your-supabase-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
-5. Start development server:
-   ```bash
-   npm run dev
-   ```
 
----
+```bash
+cd c:/xampp/htdocs/Gym
+npm install
+```
 
-## Phase Roadmap
+### 1. Create the database
 
-- **Phase 1 (Completed)**: Core UI architecture, Vite + React setup, Tailwind CSS styling system, responsive dark sidebar navigation (10 modules), Dashboard KPI overview with charts, Glassmorphism Login page, centralized Supabase client integration, placeholder routes.
-- **Phase 2 (Upcoming)**: Supabase database schema setup (Tables: `profiles`, `plans`, `members`, `memberships`, `attendance`, `payments`), RLS policies, live authentication, and Member management CRUD.
-- **Phase 3 (Upcoming)**: Live QR scanner integration, membership renewals, automated payment receipts, and advanced report exports.
+Run `supabase_schema.sql` in the Supabase SQL editor. It is idempotent, so it is safe to re-run after an update. It creates:
+
+`profiles`, `gym_settings`, `branches`, `plans`, `members`, `memberships`, `attendance`, `payments`, the `current_role()` / `is_admin()` / `is_bootstrap_needed()` helper functions, the `next_member_code()` and `next_receipt_number()` sequences, and all RLS policies.
+
+### 2. Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
+VITE_GYM_NAME=Be Smart Fitness Club
+```
+
+`VITE_GYM_NAME` is only used on the sign-in screen, before the database can be read. Once signed in, the name from `gym_settings` takes over.
+
+If these values are missing the app renders a "Database not connected" screen instead of the dashboard, so it can never silently run on placeholder data.
+
+### 3. Run
+
+```bash
+npm run dev      # http://localhost:3000
+npm run build    # production bundle in dist/
+npm run preview  # serve the production bundle locally
+npm run lint
+```
+
+## Deployment
+
+This is a single-page app using `BrowserRouter`, so the server must return `index.html` for unknown paths or deep links such as `/members` will 404 on refresh. Rewrite config is included for the common targets:
+
+| Target | File |
+| --- | --- |
+| Vercel | `vercel.json` |
+| Apache / XAMPP | `.htaccess` |
+| Netlify, Cloudflare Pages | `public/_redirects` |
+
+Vite only copies `public/` into `dist/`. If you serve `dist/` as the Apache document root, copy `.htaccess` into `dist/` as well, and make sure `AllowOverride All` is set for that directory.
+
+Note: `index.html` and `assets/` use absolute paths (`/assets/...`), so the app must be served from the root of a domain. To host it under a sub-path, set `base` in `vite.config.js` to match.
+
+## Current Status
+
+- **Phase 1 — done**: Vite + React + Tailwind setup, dark responsive sidebar, dashboard KPIs and charts, glassmorphism login, centralised Supabase client.
+- **Phase 2 — done**: live Supabase schema, RLS policies, role-based access, member/membership/plan/payment/attendance CRUD.
+- **Phase 3 — done**: QR scanner, renewals, receipt generation, reports, club settings, branches, staff management.

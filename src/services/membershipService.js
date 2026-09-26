@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 
 const MEMBERSHIP_SELECT = `
   id,
@@ -50,7 +51,7 @@ export const membershipService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     return (data || []).map((row) => ({
       ...withMember(row),
@@ -69,7 +70,7 @@ export const membershipService = {
       p_notes: notes,
     });
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return data;
   },
 
@@ -79,7 +80,7 @@ export const membershipService = {
       .update({ status: 'Cancelled' })
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 
@@ -89,14 +90,14 @@ export const membershipService = {
       .update({ auto_renew: autoRenew })
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return true;
   },
 
   // Closes out subscriptions whose window has passed and syncs member status.
   async syncExpired() {
     const { data, error } = await supabase.rpc('sync_expired_memberships');
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return data ?? 0;
   },
 };

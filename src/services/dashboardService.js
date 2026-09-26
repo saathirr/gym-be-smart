@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 import { startOfDay, startOfMonth, subDays, subMonths, addDays, format } from 'date-fns';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -156,7 +157,7 @@ export const dashboardService = {
       .select('check_in_time')
       .gte('check_in_time', since);
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     const buckets = Array.from({ length: 24 }, () => 0);
     (data || []).forEach((row) => {

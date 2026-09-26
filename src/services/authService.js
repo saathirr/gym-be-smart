@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { toMessage } from '../lib/supabaseErrors';
 
 const DEFAULT_NAME = 'Gym Staff';
 
@@ -9,7 +10,7 @@ async function loadProfile(user) {
     .eq('id', user.id)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) throw toMessage(error, 'Could not load your staff profile.');
 
   // No profile means the account was never provisioned (or was removed).
   // Fail closed instead of guessing a role, otherwise a leftover Auth user
@@ -31,7 +32,7 @@ async function loadProfile(user) {
 export const authService = {
   async getCurrentUser() {
     const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
+    if (error) throw toMessage(error);
     if (!data.user) return null;
 
     return loadProfile(data.user);
@@ -55,7 +56,7 @@ export const authService = {
       if (/email not confirmed/i.test(error.message)) {
         throw new Error('Confirm your email address before signing in.');
       }
-      throw error;
+      throw toMessage(error, 'Could not sign you in. Please try again.');
     }
 
     return { user: await loadProfile(data.user), session: data.session };
@@ -77,7 +78,7 @@ export const authService = {
       options: { data: { full_name: fullName?.trim() || 'Gym Administrator' } },
     });
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
 
     if (data.session) {
       return { user: await loadProfile(data.user), session: data.session };
@@ -98,7 +99,7 @@ export const authService = {
     }
 
     const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
-    if (sessionError) throw sessionError;
+    if (sessionError) throw toMessage(sessionError, 'Could not verify your session.');
 
     const { data: caller, error: roleReadError } = await supabase
       .from('profiles')
@@ -106,7 +107,7 @@ export const authService = {
       .eq('id', sessionData?.user?.id ?? '')
       .maybeSingle();
 
-    if (roleReadError) throw roleReadError;
+    if (roleReadError) throw toMessage(roleReadError, 'Could not verify your permissions.');
     if (caller?.role !== 'admin') {
       throw new Error('Only an administrator can create staff accounts.');
     }
@@ -117,7 +118,7 @@ export const authService = {
       options: { data: { full_name: fullName?.trim() || 'Gym Staff' } },
     });
 
-    if (error) throw error;
+    if (error) throw toMessage(error);
     if (!data.user) throw new Error('Supabase did not return the new account.');
 
     const { error: roleError } = await supabase
@@ -139,13 +140,13 @@ export const authService = {
 
   async needsBootstrap() {
     const { data, error } = await supabase.rpc('is_bootstrap_needed');
-    if (error) throw error;
+    if (error) throw toMessage(error);
     return data === true;
   },
 
   async promoteSelfToAdmin() {
     const { data, error } = await supabase.rpc('bootstrap_admin');
-    if (error) throw error;
+    if (error) throw toMessage(error);
     if (data !== true) {
       throw new Error('Setup is already complete. Ask an existing admin for access.');
     }
@@ -154,6 +155,6 @@ export const authService = {
 
   async signOut() {
     const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (error) throw toMessage(error);
   },
 };
