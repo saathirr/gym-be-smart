@@ -29,5 +29,5 @@ dist-ssr
 .env.*.local
 !.env.example
 
+# Vercel CLI local state
 .vercel
-.env*
