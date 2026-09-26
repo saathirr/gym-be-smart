@@ -195,8 +195,8 @@ export function SettingsPage() {
 
       {tab === 'profile' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2 p-6 space-y-6 border-gym-800">
-            <div className="flex items-center gap-2 pb-3 border-b border-gym-800">
+          <Card className="lg:col-span-2 p-6 space-y-6 border-edge">
+            <div className="flex items-center gap-2 pb-3 border-b border-edge">
               <Building2 className="w-5 h-5 text-brand-cyan" />
               <h3 className="text-base font-bold text-slate-100">Club profile</h3>
             </div>
@@ -244,7 +244,7 @@ export function SettingsPage() {
                   <select
                     value={form.district || 'Colombo'}
                     onChange={(e) => setForm({ ...form, district: e.target.value })}
-                    className="w-full rounded-lg bg-gym-950 border border-gym-800 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                    className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
                   >
                     {SRI_LANKAN_DISTRICTS.map((district) => (
                       <option key={district} value={district}>
@@ -279,7 +279,7 @@ export function SettingsPage() {
                   <select
                     value={form.currency || 'LKR'}
                     onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                    className="w-full rounded-lg bg-gym-950 border border-gym-800 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                    className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
                   >
                     <option value="LKR">LKR (Rs.)</option>
                     <option value="USD">USD ($)</option>
@@ -304,8 +304,8 @@ export function SettingsPage() {
           </Card>
 
           <div className="space-y-6">
-            <Card className="p-6 space-y-4 border-gym-800">
-              <div className="flex items-center gap-2 pb-2 border-b border-gym-800">
+            <Card className="p-6 space-y-4 border-edge">
+              <div className="flex items-center gap-2 pb-2 border-b border-edge">
                 <Database className="w-5 h-5 text-brand-emerald" />
                 <h3 className="text-sm font-bold text-slate-100">Database</h3>
               </div>
@@ -325,7 +325,7 @@ export function SettingsPage() {
               </div>
             </Card>
 
-            <Card className="p-6 space-y-3 border-gym-800">
+            <Card className="p-6 space-y-3 border-edge">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-brand-violet" />
                 <h3 className="text-sm font-bold text-slate-100">Access control</h3>
@@ -341,8 +341,8 @@ export function SettingsPage() {
       )}
 
       {tab === 'branches' && (
-        <Card className="p-6 space-y-5 border-gym-800">
-          <div className="flex items-center justify-between pb-3 border-b border-gym-800">
+        <Card className="p-6 space-y-5 border-edge">
+          <div className="flex items-center justify-between pb-3 border-b border-edge">
             <div className="flex items-center gap-2">
               <MapPin className="w-5 h-5 text-brand-cyan" />
               <h3 className="text-base font-bold text-slate-100">Branch locations</h3>
@@ -371,13 +371,13 @@ export function SettingsPage() {
               {branches.map((branch) => (
                 <div
                   key={branch.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60"
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60"
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-100">
                       {branch.name}
                       {branch.code && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded bg-gym-950 border border-gym-800 font-mono text-[10px] text-brand-cyan">
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-gym-950 border border-edge font-mono text-[10px] text-brand-cyan">
                           {branch.code}
                         </span>
                       )}
@@ -468,8 +468,8 @@ export function SettingsPage() {
       )}
 
       {tab === 'staff' && (
-        <Card className="p-6 space-y-5 border-gym-800">
-          <div className="flex items-center gap-2 pb-3 border-b border-gym-800">
+        <Card className="p-6 space-y-5 border-edge">
+          <div className="flex items-center gap-2 pb-3 border-b border-edge">
             <Users className="w-5 h-5 text-brand-cyan" />
             <h3 className="text-base font-bold text-slate-100">Staff accounts</h3>
           </div>
@@ -479,7 +479,7 @@ export function SettingsPage() {
               Only administrators can manage staff accounts.
             </p>
           ) : (
-            <form onSubmit={handleCreateStaff} className="space-y-4 p-4 rounded-xl bg-gym-950/60 border border-gym-800">
+            <form onSubmit={handleCreateStaff} className="space-y-4 p-4 rounded-xl bg-gym-950/60 border border-edge">
               {staffError && (
                 <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
@@ -520,7 +520,7 @@ export function SettingsPage() {
                   <select
                     value={staffForm.role}
                     onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
-                    className="w-full rounded-lg bg-gym-950 border border-gym-800 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                    className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
                   >
                     {ROLES.map((role) => (
                       <option key={role} value={role}>
@@ -543,7 +543,7 @@ export function SettingsPage() {
             {staff.map((account) => (
               <div
                 key={account.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60"
+                className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-100">
@@ -558,7 +558,7 @@ export function SettingsPage() {
                   <select
                     value={account.role}
                     onChange={(e) => handleRoleChange(account, e.target.value)}
-                    className="rounded-lg bg-gym-950 border border-gym-800 text-xs text-slate-200 px-2 py-1.5 focus:outline-none focus:border-brand-cyan"
+                    className="rounded-lg bg-gym-950 border border-edge text-xs text-slate-200 px-2 py-1.5 focus:outline-none focus:border-brand-cyan"
                   >
                     {ROLES.map((role) => (
                       <option key={role} value={role}>

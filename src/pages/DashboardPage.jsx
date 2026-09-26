@@ -31,9 +31,11 @@ import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { chartTheme } from '../utils/chartTheme';
 import { dashboardService } from '../services/dashboardService';
 import { useGym } from '../hooks/useGym';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
 import { toMessage } from '../lib/supabaseErrors';
 
 const EMPTY_SUMMARY = {
@@ -55,6 +57,8 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { currency } = useGym();
   const { user } = useAuth();
+  const { isDark } = useTheme();
+  const chart = chartTheme(isDark);
 
   const loadData = useCallback(async () => {
     try {
@@ -150,7 +154,7 @@ export function DashboardPage() {
         />
       </div>
 
-      <Card className="p-4 bg-gym-900/60 border-gym-800">
+      <Card className="p-4 bg-gym-900/60 border-edge">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-xs text-slate-300 font-medium flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-brand-cyan" />
@@ -202,28 +206,28 @@ export function DashboardPage() {
               <AreaChart data={summary.weeklyAttendance}>
                 <defs>
                   <linearGradient id="attendanceColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                    <stop offset="5%" stopColor={chart.emerald} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={chart.emerald} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
-                <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
+                <XAxis dataKey="day" stroke={chart.axis} fontSize={12} tickLine={false} />
                 <YAxis
-                  stroke="#9CA3AF"
+                  stroke={chart.axis}
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
                 />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0B0F17', borderColor: '#1F2937', borderRadius: '8px' }}
-                  itemStyle={{ color: '#10B981' }}
+                  contentStyle={{ backgroundColor: chart.tooltipBg, borderColor: chart.tooltipBorder, borderRadius: '8px' }}
+                  itemStyle={{ color: chart.emerald }}
                 />
                 <Area
                   type="monotone"
                   dataKey="count"
                   name="Check-ins"
-                  stroke="#10B981"
+                  stroke={chart.emerald}
                   strokeWidth={2}
                   fillOpacity={1}
                   fill="url(#attendanceColor)"
@@ -249,10 +253,10 @@ export function DashboardPage() {
           <div className="h-64 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={summary.monthlyRevenue}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
-                <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
+                <XAxis dataKey="month" stroke={chart.axis} fontSize={12} tickLine={false} />
                 <YAxis
-                  stroke="#9CA3AF"
+                  stroke={chart.axis}
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
@@ -261,11 +265,11 @@ export function DashboardPage() {
                   }
                 />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#0B0F17', borderColor: '#1F2937', borderRadius: '8px' }}
-                  itemStyle={{ color: '#0EA5E9' }}
+                  contentStyle={{ backgroundColor: chart.tooltipBg, borderColor: chart.tooltipBorder, borderRadius: '8px' }}
+                  itemStyle={{ color: chart.cyan }}
                   formatter={(value) => [formatCurrency(value, currency), 'Revenue']}
                 />
-                <Bar dataKey="revenue" name="Revenue" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="revenue" name="Revenue" fill={chart.cyan} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -302,7 +306,7 @@ export function DashboardPage() {
               summary.recentCheckIns.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-gym-700 transition"
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60 hover:border-edge-strong transition"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
@@ -352,7 +356,7 @@ export function DashboardPage() {
               summary.expiringMemberships.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-gym-800/60 hover:border-amber-500/30 transition"
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60 hover:border-amber-500/30 transition"
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-200">{item.full_name}</p>

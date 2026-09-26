@@ -16,8 +16,8 @@ export function Button({
   const variants = {
     primary: 'bg-brand-cyan hover:bg-sky-500 text-white focus:ring-sky-400 shadow-lg shadow-sky-500/20 active:scale-[0.98]',
     emerald: 'bg-brand-emerald hover:bg-emerald-500 text-white focus:ring-emerald-400 shadow-lg shadow-emerald-500/20 active:scale-[0.98]',
-    secondary: 'bg-gym-800 hover:bg-gym-700 text-slate-200 border border-gym-700 focus:ring-slate-400',
-    outline: 'border border-gym-700 text-slate-300 hover:border-brand-cyan hover:text-brand-cyan bg-transparent',
+    secondary: 'bg-gym-800 hover:bg-gym-700 text-slate-200 border border-edge-strong focus:ring-slate-400',
+    outline: 'border border-edge-strong text-slate-300 hover:border-brand-cyan hover:text-brand-cyan bg-transparent',
     ghost: 'text-slate-400 hover:text-slate-100 hover:bg-gym-800/60',
     danger: 'bg-brand-rose hover:bg-rose-600 text-white focus:ring-rose-500 shadow-lg shadow-rose-500/20',
   };

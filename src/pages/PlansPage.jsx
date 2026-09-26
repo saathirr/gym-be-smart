@@ -206,8 +206,8 @@ export function PlansPage() {
               key={plan.id}
               className={`flex flex-col justify-between transition-all duration-300 relative group ${
                 plan.is_active
-                  ? 'border-gym-800 hover:border-brand-cyan/50'
-                  : 'border-gym-800/60 opacity-70'
+                  ? 'border-edge hover:border-brand-cyan/50'
+                  : 'border-edge/60 opacity-70'
               }`}
             >
               <div className="space-y-4">
@@ -254,7 +254,7 @@ export function PlansPage() {
                   </p>
                 </div>
 
-                <div className="py-2 border-y border-gym-800/80">
+                <div className="py-2 border-y border-edge/80">
                   <span className="text-3xl font-extrabold text-slate-100 tracking-tight">
                     {formatCurrency(plan.price, currency)}
                   </span>
@@ -275,7 +275,7 @@ export function PlansPage() {
                 )}
               </div>
 
-              <div className="mt-6 pt-4 border-t border-gym-800/60">
+              <div className="mt-6 pt-4 border-t border-edge/60">
                 <p className="text-[11px] text-slate-500 text-center">
                   {plan.is_active
                     ? 'Available for new and renewing members'
@@ -343,7 +343,7 @@ export function PlansPage() {
               rows="3"
               value={formData.featuresText}
               onChange={(e) => setFormData({ ...formData, featuresText: e.target.value })}
-              className="w-full rounded-lg bg-gym-950 border border-gym-800 text-slate-100 text-xs p-3 focus:outline-none focus:border-brand-cyan"
+              className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs p-3 focus:outline-none focus:border-brand-cyan"
               placeholder="Gym Floor, Sauna, Free Towel Service"
             />
           </div>

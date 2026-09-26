@@ -2,9 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =====================================================================
+   THEME TOKENS
+   Light is the :root default; .dark restores the original dark palette.
+   Values are bare "R G B" channels so Tailwind can apply alpha modifiers.
+   ===================================================================== */
+:root {
+  /* Surfaces: higher step = more contrast against the page. */
+  --gym-50: 2 6 23;
+  --gym-100: 15 23 42;
+  --gym-200: 30 41 59;
+  --gym-300: 51 65 85;
+  --gym-400: 71 85 105;
+  --gym-500: 100 116 139;
+  --gym-600: 148 163 184;
+  --gym-700: 203 213 225;   /* strong border */
+  --gym-800: 226 232 240;   /* border */
+  --gym-850: 248 250 252;
+  --gym-900: 255 255 255;   /* card surface */
+  --gym-950: 241 245 249;   /* page background */
+
+  /* Borders. Separate from gym-* because a border on a white card needs more
+     contrast than a pale fill does. */
+  --edge: 203 213 225;
+  --edge-strong: 148 163 184;
+
+  /* Foreground: higher step = more prominent. All clear 4.5:1 on white. */
+  --slate-100: 15 23 42;
+  --slate-200: 30 41 59;
+  --slate-300: 51 65 85;
+  --slate-400: 71 85 105;
+  --slate-500: 95 112 134;
+
+  /* Status text, deepened so it stays readable on light surfaces. */
+  --rose-300: 200 30 67;
+  --rose-400: 190 18 60;
+  --emerald-300: 4 120 87;
+  --emerald-400: 6 95 70;
+  --amber-300: 180 83 9;
+  --amber-400: 146 64 14;
+  --sky-300: 3 105 161;
+  --sky-400: 7 89 133;
+  --violet-300: 124 58 237;
+  --violet-400: 91 33 182;
+
+  /* Brand accents, deepened for light backgrounds. */
+  --brand-cyan: 3 105 161;
+  --brand-emerald: 4 120 87;
+  --brand-violet: 109 40 217;
+  --brand-amber: 180 83 9;
+  --brand-rose: 190 18 60;
+
+  --scrollbar-track: 241 245 249;
+  --scrollbar-thumb: 203 213 225;
+  --scrollbar-thumb-hover: 148 163 184;
+  --glass-panel: rgba(255, 255, 255, 0.82);
+  --glass-card: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-card-border: rgba(15, 23, 42, 0.06);
+  color-scheme: light;
+}
+
+.dark {
+  --gym-50: 249 250 251;
+  --gym-100: 243 244 246;
+  --gym-200: 229 231 235;
+  --gym-300: 209 213 219;
+  --gym-400: 156 163 175;
+  --gym-500: 75 85 99;
+  --gym-600: 55 65 81;
+  --gym-700: 31 41 55;
+  --gym-800: 22 30 46;
+  --gym-850: 17 24 39;
+  --gym-900: 11 15 23;
+  --gym-950: 7 10 15;
+
+  --edge: 22 30 46;
+  --edge-strong: 31 41 55;
+
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 116 131 154;
+
+  --rose-300: 253 164 175;
+  --rose-400: 251 113 133;
+  --emerald-300: 110 231 183;
+  --emerald-400: 52 211 153;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --sky-300: 125 211 252;
+  --sky-400: 56 189 248;
+  --violet-300: 196 181 253;
+  --violet-400: 167 139 250;
+
+  --brand-cyan: 14 165 233;
+  --brand-emerald: 16 185 129;
+  --brand-violet: 167 139 250;
+  --brand-amber: 245 158 11;
+  --brand-rose: 244 63 94;
+
+  --scrollbar-track: 11 15 23;
+  --scrollbar-thumb: 31 41 55;
+  --scrollbar-thumb-hover: 55 65 81;
+  --glass-panel: rgba(17, 24, 39, 0.7);
+  --glass-card: rgba(22, 30, 46, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-card-border: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+}
+
 @layer base {
   body {
     @apply bg-gym-950 text-slate-100 antialiased font-sans min-h-screen overflow-x-hidden;
+  }
+
+  /* Tailwind's preflight hardcodes a light grey placeholder that is unreadable
+     on the light page background, so it is re-pointed at a theme token. */
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--slate-500));
   }
 }
 
@@ -15,31 +133,31 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F17;
+  background: rgb(var(--scrollbar-track));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1F2937;
+  background: rgb(var(--scrollbar-thumb));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: rgb(var(--scrollbar-thumb-hover));
 }
 
 /* Glassmorphism helpers */
 .glass-panel {
-  background: rgba(17, 24, 39, 0.7);
+  background: var(--glass-panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
 }
 
 .glass-card {
-  background: rgba(22, 30, 46, 0.6);
+  background: var(--glass-card);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-card-border);
 }
 
 .glow-effect {
@@ -53,7 +171,7 @@
   left: -1px;
   right: -1px;
   bottom: -1px;
-  background: linear-gradient(45deg, #0EA5E9, #10B981, #8B5CF6);
+  background: linear-gradient(45deg, rgb(var(--brand-cyan)), rgb(var(--brand-emerald)), rgb(var(--brand-violet)));
   border-radius: inherit;
   z-index: -1;
   opacity: 0;

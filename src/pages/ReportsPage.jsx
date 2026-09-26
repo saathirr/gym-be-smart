@@ -25,7 +25,9 @@ import { memberService } from '../services/memberService';
 import { attendanceService } from '../services/attendanceService';
 import { dashboardService } from '../services/dashboardService';
 import { formatDate } from '../utils/formatters';
+import { chartTheme } from '../utils/chartTheme';
 import { useGym } from '../hooks/useGym';
+import { useTheme } from '../hooks/useTheme';
 import { toMessage } from '../lib/supabaseErrors';
 
 function escapeCsv(value) {
@@ -60,6 +62,8 @@ export function ReportsPage() {
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState('');
   const { gymName, currency } = useGym();
+  const { isDark } = useTheme();
+  const chart = chartTheme(isDark);
 
   const load = useCallback(async () => {
     try {
@@ -216,7 +220,7 @@ export function ReportsPage() {
         {exports.map((item) => {
           const Icon = item.icon;
           return (
-            <Card key={item.id} className="p-6 space-y-3 border-gym-800 flex flex-col">
+            <Card key={item.id} className="p-6 space-y-3 border-edge flex flex-col">
               <div className={`p-3 rounded-xl w-fit ${item.iconClass}`}>
                 <Icon className="w-6 h-6" />
               </div>
@@ -237,7 +241,7 @@ export function ReportsPage() {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-gym-800/80">
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-edge/80">
           <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-brand-cyan" />
             Busiest hours this week
@@ -253,16 +257,16 @@ export function ReportsPage() {
         <div className="h-64 w-full pt-2">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={peakHours}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
               <XAxis
                 dataKey="hour"
-                stroke="#9CA3AF"
+                stroke={chart.axis}
                 fontSize={11}
                 tickLine={false}
                 interval={1}
               />
               <YAxis
-                stroke="#9CA3AF"
+                stroke={chart.axis}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
@@ -270,14 +274,14 @@ export function ReportsPage() {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#0B0F17',
-                  borderColor: '#1F2937',
+                  backgroundColor: chart.tooltipBg,
+                  borderColor: chart.tooltipBorder,
                   borderRadius: '8px',
                 }}
-                itemStyle={{ color: '#0EA5E9' }}
+                itemStyle={{ color: chart.cyan }}
                 formatter={(value) => [value, 'Check-ins']}
               />
-              <Bar dataKey="count" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="count" fill={chart.cyan} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

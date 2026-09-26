@@ -126,7 +126,7 @@ export function AttendancePage() {
         </div>
       )}
 
-      <Card className="p-4 bg-gym-900/80 border-gym-800">
+      <Card className="p-4 bg-gym-900/80 border-edge">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative w-full md:w-80">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -135,7 +135,7 @@ export function AttendancePage() {
               placeholder="Search member name or code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-950 border border-gym-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
+              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-950 border border-edge text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
             />
           </div>
 
@@ -166,7 +166,7 @@ export function AttendancePage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-gym-950/80 border-b border-gym-800 text-slate-400 uppercase tracking-wider font-semibold">
+              <tr className="bg-gym-950/80 border-b border-edge text-slate-400 uppercase tracking-wider font-semibold">
                 <th className="py-3.5 px-4">Member</th>
                 <th className="py-3.5 px-4">Code</th>
                 <th className="py-3.5 px-4">Plan</th>
@@ -176,7 +176,7 @@ export function AttendancePage() {
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gym-800/60 text-slate-300">
+            <tbody className="divide-y divide-edge/60 text-slate-300">
               {loading ? (
                 <tr>
                   <td colSpan="7" className="text-center py-8 text-slate-400">
@@ -208,7 +208,7 @@ export function AttendancePage() {
                       )}
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded bg-gym-950 border border-gym-800 font-mono text-[11px]">
+                      <span className="px-2 py-0.5 rounded bg-gym-950 border border-edge font-mono text-[11px]">
                         {log.method === 'MANUAL_ENTRY' ? 'Manual' : 'QR scan'}
                       </span>
                     </td>

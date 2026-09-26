@@ -6,6 +6,21 @@
     <link rel="icon" type="image/x-icon" sizes="32x32" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Be Smart Fitness Club | Gym Management System</title>
+    <script>
+      // Resolve the theme before first paint so a light-mode user never sees a
+      // dark flash while the React bundle parses. Mirrors the defaults in
+      // src/contexts/ThemeContext.jsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem('besmart.theme');
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
+          document.documentElement.classList.toggle('dark', theme === 'dark');
+          document.documentElement.style.colorScheme = theme;
+        } catch (error) {
+          /* localStorage unavailable; the markup default stays dark. */
+        }
+      })();
+    </script>
     <!-- Google Fonts Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

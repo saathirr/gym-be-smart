@@ -1,9 +1,13 @@
 import { Outlet } from 'react-router-dom';
-import { Dumbbell } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { useGym } from '../hooks/useGym';
+import { useTheme } from '../hooks/useTheme';
+import { GymLogo } from '../components/common/GymLogo';
+import { CLUB_DISPLAY_NAME } from '../utils/brand';
 
 export function AuthLayout() {
   const { gymName } = useGym();
+  const { isDark, toggleTheme } = useTheme();
 
   return (
     <div className="min-h-screen bg-gym-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
@@ -11,17 +15,27 @@ export function AuthLayout() {
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-cyan/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-brand-violet/10 rounded-full blur-3xl pointer-events-none" />
 
+      <button
+        onClick={toggleTheme}
+        className="absolute top-5 right-5 z-20 p-2 rounded-xl bg-gym-900 border border-edge text-slate-300 hover:text-brand-cyan transition"
+        aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      </button>
+
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="flex items-center justify-center gap-3 mb-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-xl shadow-sky-500/20">
-            <Dumbbell className="w-8 h-8 stroke-[2.5]" />
-          </div>
+        <div className="flex flex-col items-center gap-3 mb-3">
+          <GymLogo
+            size={80}
+            frameClassName="shadow-xl shadow-sky-500/20 ring-1 ring-black/5"
+          />
           <h1 className="font-black text-2xl text-slate-100 tracking-tight text-center">
             {gymName}
           </h1>
         </div>
         <h2 className="text-center text-xs text-slate-400 font-medium tracking-wider uppercase">
-          Sri Lanka Gym Management System
+          {CLUB_DISPLAY_NAME}
         </h2>
       </div>
 

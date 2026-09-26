@@ -11,16 +11,19 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Dumbbell,
   Menu,
   X,
   Search,
   ChevronDown,
   Building2,
   Clock,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
+import { useTheme } from '../hooks/useTheme';
+import { GymLogo } from '../components/common/GymLogo';
 import { cn } from '../utils/cn';
 import { formatDate } from '../utils/formatters';
 
@@ -44,6 +47,7 @@ export function DashboardLayout() {
 
   const { user, logout } = useAuth();
   const { gymName, settings, branches } = useGym();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -90,15 +94,13 @@ export function DashboardLayout() {
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r border-gym-800/80 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r border-edge/80 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="h-16 px-5 flex items-center justify-between border-b border-gym-800/80">
+        <div className="h-16 px-5 flex items-center justify-between border-b border-edge/80">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-lg shadow-sky-500/20 shrink-0">
-              <Dumbbell className="w-5 h-5 stroke-[2.5]" />
-            </div>
+            <GymLogo size={40} frameClassName="shadow-md ring-1 ring-black/5" />
             <div className="min-w-0">
               <p className="font-extrabold text-slate-100 tracking-tight text-sm truncate">
                 {gymName}
@@ -118,8 +120,8 @@ export function DashboardLayout() {
         </div>
 
         {activeBranch && (
-          <div className="px-4 py-3 border-b border-gym-800/50">
-            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-gym-800 text-xs">
+          <div className="px-4 py-3 border-b border-edge/50">
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-edge text-xs">
               <div className="flex items-center gap-2 text-slate-300 font-medium min-w-0">
                 <Building2 className="w-4 h-4 text-brand-cyan shrink-0" />
                 <span className="truncate">{activeBranch.name}</span>
@@ -171,7 +173,7 @@ export function DashboardLayout() {
           </button>
         </nav>
 
-        <div className="p-4 border-t border-gym-800/80 bg-gym-950/40">
+        <div className="p-4 border-t border-edge/80 bg-gym-950/40">
           <p className="text-[10px] text-slate-500 leading-relaxed">
             {settings.opening_time} - {settings.closing_time}
             {settings.phone ? ` • ${settings.phone}` : ''}
@@ -180,7 +182,7 @@ export function DashboardLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-gym-900/90 border-b border-gym-800/80 sticky top-0 z-30 flex items-center justify-between gap-4 px-4 sm:px-6 backdrop-blur-md">
+        <header className="h-16 bg-gym-900/90 border-b border-edge/80 sticky top-0 z-30 flex items-center justify-between gap-4 px-4 sm:px-6 backdrop-blur-md">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -191,9 +193,11 @@ export function DashboardLayout() {
             </button>
 
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-1.5 rounded-lg bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20 shrink-0">
-                <Dumbbell className="w-5 h-5" />
-              </div>
+              <GymLogo
+                size={32}
+                className="lg:hidden"
+                frameClassName="shadow-sm ring-1 ring-black/5"
+              />
               <div className="min-w-0">
                 <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none truncate">
                   {gymName}
@@ -212,13 +216,26 @@ export function DashboardLayout() {
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 placeholder="Search members..."
                 aria-label="Search members"
-                className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-gym-950 border border-gym-800/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
+                className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-gym-950 border border-edge/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
               />
             </form>
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 border border-gym-800 text-xs font-mono text-brand-cyan shadow-inner">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl bg-gym-950 border border-edge text-slate-300 hover:text-brand-cyan hover:border-brand-cyan/40 transition"
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 border border-edge text-xs font-mono text-brand-cyan shadow-inner">
               <Clock className="w-4 h-4 text-brand-cyan shrink-0" />
               <div className="text-right leading-tight">
                 <span className="font-bold text-slate-100 block">
@@ -250,8 +267,8 @@ export function DashboardLayout() {
               </button>
 
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-gym-900 border border-gym-800 rounded-xl shadow-2xl py-2 z-50">
-                  <div className="px-4 py-2.5 border-b border-gym-800">
+                <div className="absolute right-0 mt-2 w-56 bg-gym-900 border border-edge rounded-xl shadow-2xl py-2 z-50">
+                  <div className="px-4 py-2.5 border-b border-edge">
                     <p className="text-xs font-semibold text-slate-200 truncate">
                       {user?.full_name || 'Staff'}
                     </p>

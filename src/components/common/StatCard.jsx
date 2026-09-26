@@ -19,7 +19,7 @@ export function StatCard({
   };
 
   return (
-    <Card className="hover:border-gym-700 transition-all duration-300">
+    <Card className="hover:border-edge-strong transition-all duration-300">
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <p className="text-xs font-medium text-slate-400 tracking-wider uppercase">{title}</p>
@@ -33,7 +33,7 @@ export function StatCard({
       </div>
 
       {(change || subtext) && (
-        <div className="mt-4 pt-3 border-t border-gym-800/60 flex items-center justify-between text-xs">
+        <div className="mt-4 pt-3 border-t border-edge/60 flex items-center justify-between text-xs">
           {change && (
             <span
               className={cn(

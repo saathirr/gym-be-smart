@@ -29,7 +29,7 @@ export function SetupRequired() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gym-800 bg-gym-900/80 p-5 space-y-4">
+        <div className="rounded-xl border border-edge bg-gym-900/80 p-5 space-y-4">
           <div className="flex items-center gap-2 text-slate-300">
             <Terminal className="w-4 h-4 text-brand-cyan" />
             <span className="text-sm font-semibold">Complete these two steps</span>
@@ -48,7 +48,7 @@ export function SetupRequired() {
             </li>
           </ol>
 
-          <div className="rounded-lg bg-gym-950 border border-gym-800 p-4 space-y-1">
+          <div className="rounded-lg bg-gym-950 border border-edge p-4 space-y-1">
             {MISSING.map(([key, label]) => (
               <p key={key} className="font-mono text-xs text-rose-400">
                 {key} &mdash; {label}

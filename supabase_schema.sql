@@ -151,6 +151,15 @@ CREATE TABLE IF NOT EXISTS public.members (
 ALTER TABLE public.members
   ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL;
 
+-- Columns added after the members table first shipped. CREATE TABLE IF NOT EXISTS
+-- is a no-op on an existing table, so these must be declared separately to keep
+-- this script genuinely re-runnable against databases created by older revisions.
+ALTER TABLE public.members
+  ADD COLUMN IF NOT EXISTS nic_number TEXT,
+  ADD COLUMN IF NOT EXISTS whatsapp_number TEXT,
+  ADD COLUMN IF NOT EXISTS district TEXT,
+  ADD COLUMN IF NOT EXISTS address TEXT;
+
 -- =====================================================================
 -- TABLE: memberships (Active Subscriptions & Expirations)
 -- =====================================================================
