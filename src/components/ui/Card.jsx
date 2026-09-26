@@ -4,7 +4,9 @@ export function Card({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        'bg-gym-900/90 border border-edge/80 rounded-xl p-6 shadow-xl relative overflow-hidden backdrop-blur-sm',
+        // shadow-card resolves to a soft elevation in light mode and to no
+        // shadow at all in dark mode, where the surface step does the work.
+        'bg-gym-900/90 rounded-xl p-6 shadow-card relative overflow-hidden backdrop-blur-sm',
         className
       )}
       {...props}
@@ -15,8 +17,9 @@ export function Card({ children, className, ...props }) {
 }
 
 export function CardHeader({ children, className }) {
+  // The rule under the header is gone; the bottom margin carries the split.
   return (
-    <div className={cn('flex items-center justify-between pb-4 mb-4 border-b border-edge/80', className)}>
+    <div className={cn('flex items-center justify-between pb-4 mb-4', className)}>
       {children}
     </div>
   );

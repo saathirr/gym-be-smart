@@ -23,11 +23,11 @@ export function Modal({ isOpen, onClose, title, children, className }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gym-950/80 backdrop-blur-sm animate-fade-in">
       <div
         className={cn(
-          'w-full max-w-lg bg-gym-900 border border-edge rounded-2xl p-6 shadow-2xl space-y-4 relative transform transition-all',
-          className
-        )}
+ 'w-full max-w-lg bg-gym-900 rounded-2xl p-6 shadow-2xl space-y-4 relative transform transition-all',
+ className
+ )}
       >
-        <div className="flex items-center justify-between pb-3 border-b border-edge">
+        <div className="flex items-center justify-between pb-3 border-b">
           <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
           <button
             onClick={onClose}

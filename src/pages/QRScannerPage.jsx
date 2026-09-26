@@ -106,7 +106,7 @@ export function QRScannerPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 p-6 flex flex-col items-center justify-center space-y-4">
-          <div className="flex items-center justify-between w-full pb-3 border-b border-edge">
+          <div className="flex items-center justify-between w-full pb-3 border-b">
             <div className="flex items-center gap-2">
               <Camera className="w-5 h-5 text-brand-cyan" />
               <h3 className="text-sm font-semibold text-slate-100">Camera view</h3>
@@ -121,7 +121,7 @@ export function QRScannerPage() {
             </Button>
           </div>
 
-          <div className="w-full max-w-md mx-auto bg-gym-950 border border-edge rounded-2xl p-4 min-h-[300px] flex items-center justify-center overflow-hidden">
+          <div className="w-full max-w-md mx-auto bg-gym-950 rounded-2xl p-4 min-h-[300px] flex items-center justify-center overflow-hidden">
             {cameraOn ? (
               <div id="qr-reader" className="w-full text-slate-100" />
             ) : (

@@ -22,9 +22,12 @@ export const Input = React.forwardRef(function Input(
           ref={ref}
           type={type}
           className={cn(
-            'w-full rounded-lg bg-gym-950 border border-edge text-slate-100 placeholder-slate-500 text-sm px-3.5 py-2.5 transition focus:outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan',
+            // No border. The resting state is the warm inset fill, and focus is
+            // shown with a gold ring, which keeps the field legible on a white
+            // card without drawing an outline.
+            'w-full rounded-lg bg-gym-850 text-slate-100 placeholder-slate-500 text-sm px-3.5 py-2.5 transition focus:outline-none focus:ring-2 focus:ring-brand-gold/50',
             Icon && 'pl-10',
-            error && 'border-brand-rose focus:border-brand-rose focus:ring-brand-rose',
+            error && 'bg-rose-500/5 focus:ring-brand-rose',
             className
           )}
           {...props}

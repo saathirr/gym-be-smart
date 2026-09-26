@@ -17,7 +17,7 @@ export function AuthLayout() {
 
       <button
         onClick={toggleTheme}
-        className="absolute top-5 right-5 z-20 p-2 rounded-xl bg-gym-900 border border-edge text-slate-300 hover:text-brand-cyan transition"
+          className="absolute top-5 right-5 z-20 p-2 rounded-xl bg-gym-900 text-slate-300 shadow-card hover:text-brand-gold-strong hover:bg-gym-800 transition"
         aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       >

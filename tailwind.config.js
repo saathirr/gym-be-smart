@@ -36,12 +36,10 @@ export default {
           950: rgb('--gym-950'),
         },
 
-        // Dedicated border/divider tokens. gym-800 cannot serve both as a
-        // subtle fill and as a border: on a white card a fill wants to stay
-        // pale, while a border has to be dark enough to be seen. Dark values
-        // equal the old gym-800 / gym-700, so the dark theme is unchanged.
-        edge: rgb('--edge'),
-        'edge-strong': rgb('--edge-strong'),
+        // Table row separators only. Cards deliberately have no border token:
+        // they are separated by the shadow-card elevation in light mode and by
+        // the surface luminance step in dark mode.
+        hairline: rgb('--hairline'),
 
         // Foreground ramp only - the app never uses slate as a surface.
         slate: {
@@ -61,7 +59,14 @@ export default {
         sky: { 300: rgb('--sky-300'), 400: rgb('--sky-400') },
         violet: { 300: rgb('--violet-300'), 400: rgb('--violet-400') },
 
+        // Sampled from public/logo.jpg. `gold` is the logo colour for fills
+        // and accents; `gold-strong` and `gold-deep` are the text-safe steps,
+        // because the raw logo gold is only 2.17:1 on white.
         brand: {
+          gold: rgb('--brand-gold'),
+          'gold-strong': rgb('--brand-gold-strong'),
+          'gold-deep': rgb('--brand-gold-deep'),
+          ink: rgb('--brand-ink'),
           cyan: rgb('--brand-cyan'),
           emerald: rgb('--brand-emerald'),
           violet: rgb('--brand-violet'),
@@ -73,9 +78,13 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        'glow-cyan': '0 0 20px -3px rgba(14, 165, 233, 0.35)',
-        'glow-emerald': '0 0 20px -3px rgba(16, 185, 129, 0.35)',
-        'card-dark': '0 10px 30px -10px rgba(0, 0, 0, 0.5)',
+        // Elevation stands in for the removed card borders. In dark mode these
+        // resolve to no shadow at all, because a drop shadow cannot separate a
+        // surface from a near-black page.
+        card: 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
+        pop: 'var(--shadow-pop)',
+        'glow-gold': '0 0 20px -3px rgba(211, 172, 17, 0.4)',
       }
     },
   },

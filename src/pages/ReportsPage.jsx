@@ -220,7 +220,7 @@ export function ReportsPage() {
         {exports.map((item) => {
           const Icon = item.icon;
           return (
-            <Card key={item.id} className="p-6 space-y-3 border-edge flex flex-col">
+            <Card key={item.id} className="p-6 space-y-3 flex flex-col">
               <div className={`p-3 rounded-xl w-fit ${item.iconClass}`}>
                 <Icon className="w-6 h-6" />
               </div>
@@ -241,7 +241,7 @@ export function ReportsPage() {
       </div>
 
       <Card>
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-edge/80">
+        <div className="flex items-center justify-between pb-4 mb-4 border-b">
           <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-brand-cyan" />
             Busiest hours this week

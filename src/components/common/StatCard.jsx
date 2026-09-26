@@ -11,29 +11,30 @@ export function StatCard({
   subtext,
 }) {
   const iconVariants = {
-    cyan: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
-    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    violet: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
-    rose: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    cyan: 'bg-sky-500/10 text-sky-400',
+    emerald: 'bg-emerald-500/10 text-emerald-400',
+    amber: 'bg-amber-500/10 text-amber-400',
+    violet: 'bg-violet-500/10 text-violet-400',
+    rose: 'bg-rose-500/10 text-rose-400',
   };
 
   return (
-    <Card className="hover:border-edge-strong transition-all duration-300">
+    // The hover cue is elevation now; the card no longer has a border to tint.
+    <Card className="transition-all duration-300 hover:shadow-card-hover">
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <p className="text-xs font-medium text-slate-400 tracking-wider uppercase">{title}</p>
           <div className="text-2xl font-bold text-slate-100 tracking-tight">{value}</div>
         </div>
         {Icon && (
-          <div className={cn('p-3 rounded-xl border', iconVariants[variant])}>
+          <div className={cn('p-3 rounded-xl', iconVariants[variant])}>
             <Icon className="w-5 h-5" />
           </div>
         )}
       </div>
 
       {(change || subtext) && (
-        <div className="mt-4 pt-3 border-t border-edge/60 flex items-center justify-between text-xs">
+        <div className="mt-4 pt-3 flex items-center justify-between text-xs">
           {change && (
             <span
               className={cn(

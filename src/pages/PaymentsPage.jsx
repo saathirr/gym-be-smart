@@ -159,7 +159,7 @@ export function PaymentsPage() {
         </div>
       )}
 
-      <Card className="p-4 bg-gym-900/80 border-edge">
+      <Card className="p-4 bg-gym-900/80">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="relative w-full lg:w-80">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -168,7 +168,7 @@ export function PaymentsPage() {
               placeholder="Search receipt, member, note..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-950 border border-edge text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
+              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-850 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
             />
           </div>
 
@@ -209,7 +209,7 @@ export function PaymentsPage() {
           </div>
         </div>
 
-        <div className="mt-4 pt-3 border-t border-edge/60 flex items-center justify-between text-xs">
+        <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs">
           <span className="text-slate-400">
             {filtered.length} transaction{filtered.length === 1 ? '' : 's'} shown
           </span>
@@ -223,7 +223,7 @@ export function PaymentsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-gym-950/80 border-b border-edge text-slate-400 uppercase tracking-wider font-semibold">
+              <tr className="bg-gym-950/80 border-b text-slate-400 uppercase tracking-wider font-semibold">
                 <th className="py-3.5 px-4">Receipt</th>
                 <th className="py-3.5 px-4">Member</th>
                 <th className="py-3.5 px-4">Amount</th>
@@ -233,7 +233,7 @@ export function PaymentsPage() {
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-edge/60 text-slate-300">
+            <tbody className="divide-y divide-hairline text-slate-300">
               {loading ? (
                 <tr>
                   <td colSpan="7" className="text-center py-8 text-slate-400">
@@ -270,7 +270,7 @@ export function PaymentsPage() {
                         <select
                           value={item.payment_status}
                           onChange={(e) => handleStatusChange(item, e.target.value)}
-                          className="rounded-lg bg-gym-950 border border-edge text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-brand-cyan"
+                          className="rounded-lg bg-gym-850 text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
                         >
                           {paymentService.PAYMENT_STATUSES.map((status) => (
                             <option key={status} value={status}>
@@ -337,7 +337,7 @@ export function PaymentsPage() {
               <select
                 value={formData.member_id}
                 onChange={(e) => setFormData({ ...formData, member_id: e.target.value })}
-                className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
               >
                 {members.map((member) => (
                   <option key={member.id} value={member.id}>
@@ -364,7 +364,7 @@ export function PaymentsPage() {
               <select
                 value={formData.payment_method}
                 onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
               >
                 {paymentService.PAYMENT_METHODS.map((method) => (
                   <option key={method} value={method}>
@@ -381,7 +381,7 @@ export function PaymentsPage() {
               <select
                 value={formData.payment_status}
                 onChange={(e) => setFormData({ ...formData, payment_status: e.target.value })}
-                className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
               >
                 {paymentService.PAYMENT_STATUSES.map((status) => (
                   <option key={status} value={status}>
@@ -421,8 +421,8 @@ export function PaymentsPage() {
       >
         {selectedReceipt && (
           <div className="space-y-4 py-2">
-            <div className="p-6 rounded-2xl bg-gym-950 border border-edge space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-edge">
+            <div className="p-6 rounded-2xl bg-gym-950 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b">
                 <div>
                   <h3 className="font-extrabold text-slate-100 text-lg uppercase">
                     {settings.gym_name}
@@ -476,7 +476,7 @@ export function PaymentsPage() {
                 )}
               </div>
 
-              <div className="pt-3 border-t border-edge flex justify-between items-center text-sm font-bold">
+              <div className="pt-3 border-t flex justify-between items-center text-sm font-bold">
                 <span className="text-slate-300">Total paid</span>
                 <span className="text-brand-cyan text-lg font-mono">
                   {formatCurrency(selectedReceipt.amount, currency)}

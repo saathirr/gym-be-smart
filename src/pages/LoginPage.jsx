@@ -39,7 +39,7 @@ export function LoginPage() {
   };
 
   return (
-    <Card className="glass-panel border-edge shadow-2xl p-8 space-y-6">
+    <Card className="glass-panel shadow-2xl p-8 space-y-6">
       <div>
         <h3 className="text-xl font-bold text-slate-100 text-center">Staff sign in</h3>
         <p className="text-xs text-slate-400 text-center mt-1">

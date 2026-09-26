@@ -163,7 +163,7 @@ export function MembershipsPage() {
         </div>
       )}
 
-      <Card className="p-4 bg-gym-900/80 border-edge">
+      <Card className="p-4 bg-gym-900/80">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="relative w-full lg:w-80">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -172,7 +172,7 @@ export function MembershipsPage() {
               placeholder="Search member or plan..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-950 border border-edge text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
+              className="w-full pl-9 pr-4 py-2 rounded-lg bg-gym-850 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
             />
           </div>
 
@@ -198,7 +198,7 @@ export function MembershipsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-gym-950/80 border-b border-edge text-slate-400 uppercase tracking-wider font-semibold">
+              <tr className="bg-gym-950/80 border-b text-slate-400 uppercase tracking-wider font-semibold">
                 <th className="py-3.5 px-4">Member</th>
                 <th className="py-3.5 px-4">Plan</th>
                 <th className="py-3.5 px-4">Period</th>
@@ -207,7 +207,7 @@ export function MembershipsPage() {
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-edge/60 text-slate-300">
+            <tbody className="divide-y divide-hairline text-slate-300">
               {loading ? (
                 <tr>
                   <td colSpan="6" className="text-center py-8 text-slate-400">
@@ -294,7 +294,7 @@ export function MembershipsPage() {
       >
         {selectedSub && (
           <form onSubmit={handleProcessRenewal} className="space-y-4">
-            <div className="p-3 rounded-lg bg-gym-950 border border-edge space-y-1">
+            <div className="p-3 rounded-lg bg-gym-950 space-y-1">
               <p className="text-xs font-semibold text-slate-200">{selectedSub.member_name}</p>
               <p className="text-[11px] text-slate-400 font-mono">{selectedSub.member_code}</p>
               <p className="text-[11px] text-slate-400">
@@ -323,7 +323,7 @@ export function MembershipsPage() {
                   <select
                     value={selectedPlanId}
                     onChange={(e) => setSelectedPlanId(e.target.value)}
-                    className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                    className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
                   >
                     {plans.map((plan) => (
                       <option key={plan.id} value={plan.id}>
@@ -340,7 +340,7 @@ export function MembershipsPage() {
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full rounded-lg bg-gym-950 border border-edge text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:border-brand-cyan"
+                    className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
                   >
                     <option value="Cash">Cash</option>
                     <option value="Card">Card</option>

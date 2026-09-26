@@ -61,7 +61,7 @@ export function SetupPage() {
   };
 
   return (
-    <Card className="border-edge shadow-2xl p-8 space-y-6">
+    <Card className="shadow-2xl p-8 space-y-6">
       <div className="text-center space-y-2">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20 flex items-center justify-center">
           <ShieldCheck className="w-6 h-6" />

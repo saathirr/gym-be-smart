@@ -94,11 +94,11 @@ export function DashboardLayout() {
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r border-edge/80 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
+ 'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
+ sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+ )}
       >
-        <div className="h-16 px-5 flex items-center justify-between border-b border-edge/80">
+        <div className="h-16 px-5 flex items-center justify-between border-b">
           <div className="flex items-center gap-3 min-w-0">
             <GymLogo size={40} frameClassName="shadow-md ring-1 ring-black/5" />
             <div className="min-w-0">
@@ -120,8 +120,8 @@ export function DashboardLayout() {
         </div>
 
         {activeBranch && (
-          <div className="px-4 py-3 border-b border-edge/50">
-            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-edge text-xs">
+          <div className="px-4 py-3 border-b">
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 text-xs">
               <div className="flex items-center gap-2 text-slate-300 font-medium min-w-0">
                 <Building2 className="w-4 h-4 text-brand-cyan shrink-0" />
                 <span className="truncate">{activeBranch.name}</span>
@@ -173,7 +173,7 @@ export function DashboardLayout() {
           </button>
         </nav>
 
-        <div className="p-4 border-t border-edge/80 bg-gym-950/40">
+        <div className="p-4 border-t bg-gym-950/40">
           <p className="text-[10px] text-slate-500 leading-relaxed">
             {settings.opening_time} - {settings.closing_time}
             {settings.phone ? ` • ${settings.phone}` : ''}
@@ -182,7 +182,7 @@ export function DashboardLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-gym-900/90 border-b border-edge/80 sticky top-0 z-30 flex items-center justify-between gap-4 px-4 sm:px-6 backdrop-blur-md">
+        <header className="h-16 bg-gym-900/90 border-b sticky top-0 z-30 flex items-center justify-between gap-4 px-4 sm:px-6 backdrop-blur-md">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -216,7 +216,7 @@ export function DashboardLayout() {
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 placeholder="Search members..."
                 aria-label="Search members"
-                className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-gym-950 border border-edge/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
+                className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-gym-850 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
               />
             </form>
           </div>
@@ -224,7 +224,7 @@ export function DashboardLayout() {
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl bg-gym-950 border border-edge text-slate-300 hover:text-brand-cyan hover:border-brand-cyan/40 transition"
+              className="p-2 rounded-xl bg-gym-850 text-slate-300 hover:text-brand-gold-strong hover:bg-gym-800 transition"
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
@@ -235,7 +235,7 @@ export function DashboardLayout() {
               )}
             </button>
 
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 border border-edge text-xs font-mono text-brand-cyan shadow-inner">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 text-xs font-mono text-brand-cyan shadow-inner">
               <Clock className="w-4 h-4 text-brand-cyan shrink-0" />
               <div className="text-right leading-tight">
                 <span className="font-bold text-slate-100 block">
@@ -267,8 +267,8 @@ export function DashboardLayout() {
               </button>
 
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-gym-900 border border-edge rounded-xl shadow-2xl py-2 z-50">
-                  <div className="px-4 py-2.5 border-b border-edge">
+                <div className="absolute right-0 mt-2 w-56 bg-gym-900 rounded-xl shadow-2xl py-2 z-50">
+                  <div className="px-4 py-2.5 border-b">
                     <p className="text-xs font-semibold text-slate-200 truncate">
                       {user?.full_name || 'Staff'}
                     </p>

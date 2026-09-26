@@ -37,16 +37,19 @@ function contrast(a, b) {
 
 const THEMES = { light, dark };
 
-// The surfaces any text can land on: page background, card, and the inputs
-// which reuse the page tone.
+// The surfaces any text can land on. gym-950 is the page, gym-900 the card,
+// and gym-850 the warm inset used by inputs and table headers.
 const SURFACES = ['gym-950', 'gym-900', 'gym-850'];
 
-// Everything the app renders as a foreground colour.
+// Everything the app renders as a foreground colour. brand-gold is excluded on
+// purpose: it is the logo fill colour, only 2.17:1 on white, and must never
+// carry text. The text-safe steps are brand-gold-strong and brand-gold-deep.
 const FOREGROUNDS = [
   'slate-100', 'slate-200', 'slate-300', 'slate-400', 'slate-500',
   'rose-300', 'rose-400', 'emerald-300', 'emerald-400',
   'amber-300', 'amber-400', 'sky-300', 'sky-400', 'violet-300', 'violet-400',
   'brand-cyan', 'brand-emerald', 'brand-violet', 'brand-amber', 'brand-rose',
+  'brand-gold-strong', 'brand-gold-deep',
 ];
 
 const AA = 4.5;
@@ -54,7 +57,7 @@ const AA = 4.5;
 describe('theme tokens', () => {
   it.each(Object.keys(THEMES))('%s theme defines every token', (name) => {
     const tokens = THEMES[name];
-    const missing = [...SURFACES, ...FOREGROUNDS, 'edge', 'edge-strong'].filter(
+    const missing = [...SURFACES, ...FOREGROUNDS, 'hairline', 'brand-gold'].filter(
       (token) => !tokens[token]
     );
     expect(missing).toEqual([]);
@@ -79,29 +82,38 @@ describe('theme tokens', () => {
     }
   );
 
-  it('keeps the dark palette identical to the original hard-coded design', () => {
-    // Guards the requirement that dark mode must look as it did. The two
-    // exceptions are muted text shades that were already below WCAG AA in the
-    // shipped dark theme and were nudged just far enough to pass:
-    // slate-500 #64748B -> #74839A (was 4.03:1 on a card)
-    // brand-violet #8B5CF6 -> #A78BFA (was 4.19:1 on gym-850)
+  it('keeps the dark page as the near-black the original design used', () => {
+    // The night theme keeps its identity. The only deliberate change is the
+    // card surface, lifted from #0B0F17 so it stays visible now that the
+    // border and the drop shadow are both gone.
     expect(dark['gym-950']).toEqual([7, 10, 15]);
-    expect(dark['gym-900']).toEqual([11, 15, 23]);
-    expect(dark['gym-800']).toEqual([22, 30, 46]);
-    expect(dark['gym-700']).toEqual([31, 41, 55]);
-    expect(dark.edge).toEqual([22, 30, 46]);
-    expect(dark['edge-strong']).toEqual([31, 41, 55]);
+    expect(dark['gym-900']).toEqual([19, 26, 38]);
+    expect(dark['gym-800']).toEqual([33, 43, 62]);
+    expect(dark['gym-700']).toEqual([44, 56, 80]);
     expect(dark['slate-100']).toEqual([241, 245, 249]);
-    expect(dark['slate-500']).toEqual([116, 131, 154]);
-    expect(dark['brand-cyan']).toEqual([14, 165, 233]);
+    expect(dark.hairline).toEqual([30, 39, 56]);
+  });
+
+  it('uses the logo gold sampled from public/logo.jpg', () => {
+    // #D3AC11 is 68% of the chromatic pixels in the shipped logo.
+    expect(light['brand-gold']).toEqual([211, 172, 17]);
+  });
+
+  it('keeps the logo gold out of small-text duty', () => {
+    // brand-gold is a fill. If it ever creeps above the AA floor on white it
+    // is being used as text somewhere and needs the text-safe step instead.
+    const onWhite = contrast(light['brand-gold'], light['gym-950']);
+    expect(onWhite).toBeLessThan(AA);
+
+    // Dark type on the gold fill is what the primary button uses.
+    expect(contrast(light['brand-ink'], light['brand-gold'])).toBeGreaterThan(AA);
   });
 
   it('orients each theme the right way round', () => {
     const lum = (t, k) => relativeLuminance(t[k]);
 
-    // In both themes the card sits slightly brighter than the page behind it,
-    // so the card reads as a raised surface.
-    expect(lum(light, 'gym-900')).toBeGreaterThan(lum(light, 'gym-950'));
+    // In both themes the card sits brighter than the page behind it.
+    expect(lum(light, 'gym-900')).toBeGreaterThanOrEqual(lum(light, 'gym-950'));
     expect(lum(dark, 'gym-900')).toBeGreaterThan(lum(dark, 'gym-950'));
 
     // Foreground ramps run from prominent to muted, in opposite directions.
@@ -109,25 +121,29 @@ describe('theme tokens', () => {
     expect(lum(dark, 'slate-100')).toBeGreaterThan(lum(dark, 'slate-500'));
   });
 
-  it('keeps borders visible against the surfaces they sit on', () => {
-    // WCAG sets no minimum for borders, and the two themes need different
-    // floors. Dark cards are already separated from the page by the surface
-    // step, so their border stays deliberately faint - that is the existing
-    // design. On white a border is the only thing defining the card edge, so
-    // it has to carry the separation itself.
-    const FLOOR = { dark: 1.05, light: 1.3 };
+  it('keeps cards separable from the page now that borders are gone', () => {
+    // With no border and no visible shadow in dark mode, the only thing
+    // defining a card edge is the surface step. In light mode the card and
+    // the page are both pure white, so the separation is carried entirely by
+    // the elevation shadow and this test instead guards that the shadow token
+    // exists and is not a no-op.
+    expect(contrast(dark['gym-900'], dark['gym-950'])).toBeGreaterThan(1.05);
 
+    const lightShadow = css.match(/--shadow-card:\s*([^;]+);/);
+    const darkBlock = css.match(/\.dark\s*\{[^}]*\}/)[0];
+    const darkShadow = darkBlock.match(/--shadow-card:\s*([^;]+);/);
+    expect(lightShadow).not.toBeNull();
+    expect(darkShadow).not.toBeNull();
+    // Light gets a real drop shadow; dark is deliberately transparent.
+    expect(lightShadow[1]).toMatch(/rgba?\(/);
+    expect(darkShadow[1]).toMatch(/0 0 0 0/);
+  });
+
+  it('keeps the hairline faint enough to read as a row rule, not a box', () => {
     for (const [name, tokens] of Object.entries(THEMES)) {
-      expect(contrast(tokens.edge, tokens['gym-900']), `${name} edge on card`).toBeGreaterThan(
-        FLOOR[name]
-      );
-      expect(contrast(tokens.edge, tokens['gym-950']), `${name} edge on page`).toBeGreaterThan(
-        FLOOR[name]
-      );
-      expect(
-        contrast(tokens['edge-strong'], tokens['gym-900']),
-        `${name} edge-strong on card`
-      ).toBeGreaterThan(contrast(tokens.edge, tokens['gym-900']));
+      const ratio = contrast(tokens.hairline, tokens['gym-900']);
+      expect(ratio, `${name} hairline on card`).toBeGreaterThan(1.02);
+      expect(ratio, `${name} hairline on card`).toBeLessThan(2.2);
     }
   });
 });

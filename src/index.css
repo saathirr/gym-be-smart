@@ -4,37 +4,46 @@
 
 /* =====================================================================
    THEME TOKENS
-   Light is the :root default; .dark restores the original dark palette.
+   Light is the :root default; .dark is the night theme.
    Values are bare "R G B" channels so Tailwind can apply alpha modifiers.
+
+   The accent is the club logo's own gold, sampled from public/logo.jpg at
+   #D3AC11 (68% of the chromatic pixels in that file). The logo is gold on
+   black on white, so the palette is a gold accent over black/white
+   neutrals with a warm tint on the light surfaces.
+
+   There are no card borders. Cards are separated by elevation shadow in
+   light mode and by surface luminance in dark mode, where a shadow is
+   invisible. --hairline survives only for table row separators, which aid
+   scanning of dense rows and are not "boxes".
    ===================================================================== */
 :root {
-  /* Surfaces: higher step = more contrast against the page. */
-  --gym-50: 2 6 23;
+  /* Surfaces. The page and the card are both pure white, so the card edge is
+     drawn by --shadow-card rather than by a tone difference. */
+  --gym-50: 120 104 62;
   --gym-100: 15 23 42;
   --gym-200: 30 41 59;
   --gym-300: 51 65 85;
   --gym-400: 71 85 105;
   --gym-500: 100 116 139;
   --gym-600: 148 163 184;
-  --gym-700: 203 213 225;   /* strong border */
-  --gym-800: 226 232 240;   /* border */
-  --gym-850: 248 250 252;
+  --gym-700: 235 226 199;   /* warm gold tint, hover fill */
+  --gym-800: 246 241 223;   /* warm gold tint, subtle fill */
+  --gym-850: 252 250 243;   /* table header / inset fill */
   --gym-900: 255 255 255;   /* card surface */
-  --gym-950: 241 245 249;   /* page background */
+  --gym-950: 255 255 255;   /* page background */
 
-  /* Borders. Separate from gym-* because a border on a white card needs more
-     contrast than a pale fill does. */
-  --edge: 203 213 225;
-  --edge-strong: 148 163 184;
+  /* Table row separators only. */
+  --hairline: 233 229 214;
 
   /* Foreground: higher step = more prominent. All clear 4.5:1 on white. */
   --slate-100: 15 23 42;
   --slate-200: 30 41 59;
   --slate-300: 51 65 85;
   --slate-400: 71 85 105;
-  --slate-500: 95 112 134;
+  --slate-500: 90 107 130;
 
-  /* Status text, deepened so it stays readable on light surfaces. */
+  /* Status text, deepened so it stays readable on white. */
   --rose-300: 200 30 67;
   --rose-400: 190 18 60;
   --emerald-300: 4 120 87;
@@ -43,23 +52,35 @@
   --amber-400: 146 64 14;
   --sky-300: 3 105 161;
   --sky-400: 7 89 133;
-  --violet-300: 124 58 237;
-  --violet-400: 91 33 182;
+  --violet-300: 91 33 182;
+  --violet-400: 76 29 149;
 
-  /* Brand accents, deepened for light backgrounds. */
-  --brand-cyan: 3 105 161;
+  /* Brand. --brand-gold is the logo colour and is used for fills, icon
+     tints and large accents. It is only 2.17:1 on white, so it must never
+     carry small text: --brand-gold-strong (4.77:1) and --brand-gold-deep
+     (7.16:1) are the text-safe steps. */
+  --brand-gold: 211 172 17;
+  --brand-gold-strong: 143 110 4;
+  --brand-gold-deep: 110 84 2;
+  --brand-ink: 26 20 4;
+  --brand-cyan: 143 110 4;
   --brand-emerald: 4 120 87;
-  --brand-violet: 109 40 217;
+  --brand-violet: 91 33 182;
   --brand-amber: 180 83 9;
   --brand-rose: 190 18 60;
 
-  --scrollbar-track: 241 245 249;
-  --scrollbar-thumb: 203 213 225;
-  --scrollbar-thumb-hover: 148 163 184;
-  --glass-panel: rgba(255, 255, 255, 0.82);
-  --glass-card: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(15, 23, 42, 0.08);
-  --glass-card-border: rgba(15, 23, 42, 0.06);
+  /* Elevation replaces the borders. */
+  --shadow-card: 0 1px 2px rgba(26, 20, 4, 0.05), 0 4px 14px rgba(26, 20, 4, 0.06);
+  --shadow-card-hover: 0 2px 4px rgba(26, 20, 4, 0.06), 0 10px 26px rgba(26, 20, 4, 0.1);
+  --shadow-pop: 0 12px 44px rgba(26, 20, 4, 0.16);
+
+  --scrollbar-track: 252 250 243;
+  --scrollbar-thumb: 226 216 186;
+  --scrollbar-thumb-hover: 205 190 148;
+  --glass-panel: rgba(255, 255, 255, 0.86);
+  --glass-card: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(26, 20, 4, 0.07);
+  --glass-card-border: rgba(26, 20, 4, 0.05);
   color-scheme: light;
 }
 
@@ -71,20 +92,21 @@
   --gym-400: 156 163 175;
   --gym-500: 75 85 99;
   --gym-600: 55 65 81;
-  --gym-700: 31 41 55;
-  --gym-800: 22 30 46;
-  --gym-850: 17 24 39;
-  --gym-900: 11 15 23;
+  --gym-700: 44 56 80;
+  --gym-800: 33 43 62;
+  --gym-850: 26 34 51;
+  /* Lifted from #0B0F17. Without a border or a visible shadow, a card at
+     #0B0F17 on a #070A0F page is only 1.03:1 and effectively disappears. */
+  --gym-900: 19 26 38;
   --gym-950: 7 10 15;
 
-  --edge: 22 30 46;
-  --edge-strong: 31 41 55;
+  --hairline: 30 39 56;
 
   --slate-100: 241 245 249;
   --slate-200: 226 232 240;
   --slate-300: 203 213 225;
   --slate-400: 148 163 184;
-  --slate-500: 116 131 154;
+  --slate-500: 138 152 173;
 
   --rose-300: 253 164 175;
   --rose-400: 251 113 133;
@@ -97,19 +119,31 @@
   --violet-300: 196 181 253;
   --violet-400: 167 139 250;
 
-  --brand-cyan: 14 165 233;
-  --brand-emerald: 16 185 129;
+  /* The logo gold sits well clear of the dark surfaces, so it is used
+     directly for text here. */
+  --brand-gold: 226 188 48;
+  --brand-gold-strong: 238 206 92;
+  --brand-gold-deep: 250 227 150;
+  --brand-ink: 7 10 15;
+  --brand-cyan: 56 189 248;
+  --brand-emerald: 52 211 153;
   --brand-violet: 167 139 250;
-  --brand-amber: 245 158 11;
-  --brand-rose: 244 63 94;
+  --brand-amber: 251 191 36;
+  --brand-rose: 251 113 133;
+
+  /* A shadow cannot separate a surface from a near-black page, so dark
+     cards rely on the luminance step above and take no drop shadow. */
+  --shadow-card: 0 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-card-hover: 0 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.6);
 
   --scrollbar-track: 11 15 23;
   --scrollbar-thumb: 31 41 55;
   --scrollbar-thumb-hover: 55 65 81;
-  --glass-panel: rgba(17, 24, 39, 0.7);
-  --glass-card: rgba(22, 30, 46, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-card-border: rgba(255, 255, 255, 0.05);
+  --glass-panel: rgba(19, 26, 38, 0.82);
+  --glass-card: rgba(26, 34, 51, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-card-border: rgba(255, 255, 255, 0.04);
   color-scheme: dark;
 }
 
@@ -145,19 +179,20 @@
   background: rgb(var(--scrollbar-thumb-hover));
 }
 
-/* Glassmorphism helpers */
+/* Glassmorphism helpers. The 1px border is gone: panels are separated by
+   elevation, which reads better than an outline on a white page. */
 .glass-panel {
   background: var(--glass-panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-card);
 }
 
 .glass-card {
   background: var(--glass-card);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--shadow-card);
 }
 
 .glow-effect {
@@ -171,7 +206,7 @@
   left: -1px;
   right: -1px;
   bottom: -1px;
-  background: linear-gradient(45deg, rgb(var(--brand-cyan)), rgb(var(--brand-emerald)), rgb(var(--brand-violet)));
+  background: linear-gradient(45deg, rgb(var(--brand-gold)), rgb(var(--brand-amber)), rgb(var(--brand-gold-strong)));
   border-radius: inherit;
   z-index: -1;
   opacity: 0;

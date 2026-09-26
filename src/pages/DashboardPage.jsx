@@ -154,7 +154,7 @@ export function DashboardPage() {
         />
       </div>
 
-      <Card className="p-4 bg-gym-900/60 border-edge">
+      <Card className="p-4 bg-gym-900/60">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-xs text-slate-300 font-medium flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-brand-cyan" />
@@ -306,7 +306,7 @@ export function DashboardPage() {
               summary.recentCheckIns.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60 hover:border-edge-strong transition"
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 transition"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
@@ -356,7 +356,7 @@ export function DashboardPage() {
               summary.expiringMemberships.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-gym-950/60 border border-edge/60 hover:border-amber-500/30 transition"
+                  className="flex items-center justify-between p-3 rounded-xl bg-gym-850/60 hover:bg-gym-800/60 transition"
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-200">{item.full_name}</p>

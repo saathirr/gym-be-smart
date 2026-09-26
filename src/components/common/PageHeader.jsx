@@ -1,6 +1,6 @@
 export function PageHeader({ title, description, children }) {
   return (
-    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-edge/80 mb-6">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b mb-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-100 tracking-tight">{title}</h1>
         {description && (
