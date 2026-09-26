@@ -1,93 +1,102 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { addDays } from 'date-fns';
+import { supabase } from '../lib/supabase';
+
+const MEMBERSHIP_SELECT = `
+  id,
+  start_date,
+  end_date,
+  status,
+  auto_renew,
+  notes,
+  members ( id, full_name, member_code, status ),
+  plans ( id, name, price, duration_days )
+`;
+
+function withMember(row) {
+  return {
+    id: row.id,
+    member_id: row.members?.id ?? null,
+    member_name: row.members?.full_name || 'N/A',
+    member_code: row.members?.member_code || 'N/A',
+    member_status: row.members?.status || 'N/A',
+    plan_id: row.plans?.id ?? null,
+    plan_name: row.plans?.name || 'N/A',
+    duration_days: row.plans?.duration_days ?? null,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    status: row.status,
+    auto_renew: row.auto_renew,
+    notes: row.notes,
+    amount: Number(row.plans?.price ?? 0),
+  };
+}
+
+function daysUntil(dateString) {
+  if (!dateString) return null;
+  const target = new Date(`${dateString}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target - today) / 86400000);
+}
 
 export const membershipService = {
-  async getMemberships() {
-    if (!isSupabaseConfigured) {
-      const stored = localStorage.getItem('be_smart_memberships');
-      return stored ? JSON.parse(stored) : [];
-    }
-
-    const { data, error } = await supabase
+  async getMemberships({ status = 'ALL' } = {}) {
+    let query = supabase
       .from('memberships')
-      .select(`
-        id,
-        start_date,
-        end_date,
-        status,
-        auto_renew,
-        notes,
-        members ( id, full_name, member_code ),
-        plans ( id, name, price )
-      `)
+      .select(MEMBERSHIP_SELECT)
       .order('end_date', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching memberships:', error);
-      return [];
+    if (status !== 'ALL') {
+      query = query.eq('status', status);
     }
 
-    return (data || []).map((m) => ({
-      id: m.id,
-      member_id: m.members?.id,
-      member_name: m.members?.full_name || 'N/A',
-      member_code: m.members?.member_code || 'N/A',
-      plan_id: m.plans?.id,
-      plan_name: m.plans?.name || 'N/A',
-      start_date: m.start_date,
-      end_date: m.end_date,
-      status: m.status,
-      amount: m.plans?.price || 0,
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return (data || []).map((row) => ({
+      ...withMember(row),
+      days_remaining: daysUntil(row.end_date),
     }));
   },
 
-  async renewMembership(memberId, planId, durationDays = 30, amount = 5000) {
-    const startDate = new Date().toISOString().split('T')[0];
-    const endDate = addDays(new Date(), durationDays).toISOString().split('T')[0];
-
-    if (!isSupabaseConfigured) {
-      const existing = await this.getMemberships();
-      const updated = existing.map((sub) =>
-        sub.member_id === memberId || sub.id === memberId
-          ? { ...sub, start_date: startDate, end_date: endDate, status: 'Active' }
-          : sub
-      );
-      localStorage.setItem('be_smart_memberships', JSON.stringify(updated));
-      return true;
-    }
-
-    const { data, error } = await supabase
-      .from('memberships')
-      .insert([
-        {
-          member_id: memberId,
-          plan_id: planId,
-          start_date: startDate,
-          end_date: endDate,
-          status: 'Active',
-        },
-      ])
-      .select()
-      .single();
+  // Delegates to the atomic database function so the previous subscription is
+  // closed in the same transaction. Doing this from the client left members
+  // with two rows both flagged 'Active'.
+  async renewMembership(memberId, planId, { paymentMethod = 'Cash', notes = null } = {}) {
+    const { data, error } = await supabase.rpc('renew_membership', {
+      p_member_id: memberId,
+      p_plan_id: planId,
+      p_payment_method: paymentMethod,
+      p_notes: notes,
+    });
 
     if (error) throw error;
-
-    // Also update member status to Active
-    await supabase.from('members').update({ status: 'Active' }).eq('id', memberId);
-
-    // Record renewal payment
-    const receiptNo = `REC-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    await supabase.from('payments').insert([
-      {
-        member_id: memberId,
-        membership_id: data.id,
-        amount,
-        payment_method: 'Cash',
-        payment_status: 'Paid',
-        receipt_number: receiptNo,
-      },
-    ]);
-
     return data;
+  },
+
+  async cancelMembership(id) {
+    const { error } = await supabase
+      .from('memberships')
+      .update({ status: 'Cancelled' })
+      .eq('id', id);
+
+    if (error) throw error;
+    return true;
+  },
+
+  async setAutoRenew(id, autoRenew) {
+    const { error } = await supabase
+      .from('memberships')
+      .update({ auto_renew: autoRenew })
+      .eq('id', id);
+
+    if (error) throw error;
+    return true;
+  },
+
+  // Closes out subscriptions whose window has passed and syncs member status.
+  async syncExpired() {
+    const { data, error } = await supabase.rpc('sync_expired_memberships');
+    if (error) throw error;
+    return data ?? 0;
   },
 };

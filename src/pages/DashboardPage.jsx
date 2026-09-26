@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users,
@@ -12,6 +12,7 @@ import {
   Clock,
   CheckCircle2,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -31,58 +32,54 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { dashboardService } from '../services/dashboardService';
+import { useGym } from '../hooks/useGym';
+import { useAuth } from '../hooks/useAuth';
+import { toMessage } from '../lib/supabaseErrors';
 
-const attendanceData = [
-  { day: 'Mon', count: 142 },
-  { day: 'Tue', count: 168 },
-  { day: 'Wed', count: 155 },
-  { day: 'Thu', count: 189 },
-  { day: 'Fri', count: 174 },
-  { day: 'Sat', count: 210 },
-  { day: 'Sun', count: 130 },
-];
-
-const revenueData = [
-  { month: 'May', revenue: 12400 },
-  { month: 'Jun', revenue: 14200 },
-  { month: 'Jul', revenue: 15800 },
-  { month: 'Aug', revenue: 17100 },
-  { month: 'Sep', revenue: 19450 },
-];
+const EMPTY_SUMMARY = {
+  activeMembersCount: 0,
+  todayAttendanceCount: 0,
+  monthRevenue: 0,
+  totalRevenue: 0,
+  expiringCount: 0,
+  weeklyAttendance: [],
+  monthlyRevenue: [],
+  recentCheckIns: [],
+  expiringMemberships: [],
+};
 
 export function DashboardPage() {
-  const [summary, setSummary] = useState({
-    activeMembersCount: 0,
-    todayAttendanceCount: 0,
-    totalRevenue: 0,
-    expiringCount: 0,
-    recentCheckIns: [],
-    expiringMemberships: [],
-  });
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { currency } = useGym();
+  const { user } = useAuth();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await dashboardService.getDashboardSummary();
-      setSummary(data);
+      setError('');
+      setSummary(await dashboardService.getDashboardSummary());
     } catch (err) {
-      console.error('Error loading dashboard stats:', err);
+      setError(toMessage(err, 'Could not load the dashboard.'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
+
+  const hasChartData = summary.weeklyAttendance.length > 0;
+  const hasRevenueData = summary.monthlyRevenue.length > 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard Overview"
-        description="Real-time performance metrics, facility attendance, and financial analytics."
+        title={`Welcome back, ${user?.full_name?.split(' ')[0] || 'there'}`}
+        description="Live club metrics from the attendance, membership, and payment records."
       >
         <Button
           variant="secondary"
@@ -91,7 +88,7 @@ export function DashboardPage() {
           onClick={loadData}
           disabled={loading}
         >
-          {loading ? 'Refreshing...' : 'Refresh Stats'}
+          {loading ? 'Refreshing...' : 'Refresh'}
         </Button>
         <Button
           variant="primary"
@@ -102,52 +99,62 @@ export function DashboardPage() {
         </Button>
       </PageHeader>
 
-      {/* KPI Stat Cards */}
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 text-xs text-rose-400">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+            <span>{error}</span>
+          </div>
+          <Button variant="secondary" size="sm" onClick={loadData}>
+            Try again
+          </Button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <StatCard
           title="Active Members"
-          value={loading ? '...' : summary.activeMembersCount.toString()}
-          change="+12% this month"
+          value={loading ? '...' : String(summary.activeMembersCount)}
+          change="Registered"
           trend="up"
           icon={Users}
           variant="cyan"
-          subtext="Total active subscribers"
+          subtext="Currently running"
         />
         <StatCard
           title="Today's Attendance"
-          value={loading ? '...' : summary.todayAttendanceCount.toString()}
-          change="+8% vs last Mon"
+          value={loading ? '...' : String(summary.todayAttendanceCount)}
+          change="Today"
           trend="up"
           icon={CalendarCheck}
           variant="emerald"
-          subtext="Verified check-in logs"
+          subtext="Check-ins logged"
         />
         <StatCard
-          title="Monthly Revenue"
-          value={loading ? '...' : formatCurrency(summary.totalRevenue)}
-          change="+15.4%"
+          title="Revenue This Month"
+          value={loading ? '...' : formatCurrency(summary.monthRevenue, currency)}
+          change="Paid only"
           trend="up"
           icon={CircleDollarSign}
           variant="violet"
-          subtext="Target $20,000"
+          subtext={`${formatCurrency(summary.totalRevenue, currency)} all time`}
         />
         <StatCard
           title="Expiring Soon"
-          value={loading ? '...' : summary.expiringCount.toString()}
-          change="Requires action"
+          value={loading ? '...' : String(summary.expiringCount)}
+          change="Expiring"
           trend="down"
           icon={AlertTriangle}
           variant="amber"
-          subtext="Next 7 days"
+          subtext="Within 7 days"
         />
       </div>
 
-      {/* Quick Action Shortcuts Bar */}
       <Card className="p-4 bg-gym-900/60 border-gym-800">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-xs text-slate-300 font-medium flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-brand-cyan"></span>
-            Quick Operational Actions:
+            <span className="w-2 h-2 rounded-full bg-brand-cyan" />
+            Quick actions
           </div>
           <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <Button
@@ -181,20 +188,18 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Attendance Trends Chart */}
         <Card>
           <CardHeader>
             <CardTitle>
               <CalendarCheck className="w-5 h-5 text-brand-emerald" />
-              Weekly Attendance Trend
+              Weekly Attendance
             </CardTitle>
-            <Badge variant="emerald">Live Logs</Badge>
+            <Badge variant="emerald">Last 7 days</Badge>
           </CardHeader>
           <div className="h-64 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={attendanceData}>
+              <AreaChart data={summary.weeklyAttendance}>
                 <defs>
                   <linearGradient id="attendanceColor" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
@@ -203,7 +208,13 @@ export function DashboardPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
                 <XAxis dataKey="day" stroke="#9CA3AF" fontSize={12} tickLine={false} />
-                <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis
+                  stroke="#9CA3AF"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0B0F17', borderColor: '#1F2937', borderRadius: '8px' }}
                   itemStyle={{ color: '#10B981' }}
@@ -211,6 +222,7 @@ export function DashboardPage() {
                 <Area
                   type="monotone"
                   dataKey="count"
+                  name="Check-ins"
                   stroke="#10B981"
                   strokeWidth={2}
                   fillOpacity={1}
@@ -219,37 +231,53 @@ export function DashboardPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          {!loading && !hasChartData && (
+            <p className="text-xs text-slate-400 text-center -mt-2">
+              No attendance recorded in the last 7 days.
+            </p>
+          )}
         </Card>
 
-        {/* Revenue Growth Chart */}
         <Card>
           <CardHeader>
             <CardTitle>
               <CircleDollarSign className="w-5 h-5 text-brand-cyan" />
-              Monthly Revenue Performance
+              Revenue Performance
             </CardTitle>
-            <Badge variant="cyan">USD ($)</Badge>
+            <Badge variant="cyan">{currency}</Badge>
           </CardHeader>
           <div className="h-64 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueData}>
+              <BarChart data={summary.monthlyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
                 <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} tickLine={false} />
-                <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis
+                  stroke="#9CA3AF"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) =>
+                    value >= 1000 ? `${Math.round(value / 1000)}k` : value
+                  }
+                />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#0B0F17', borderColor: '#1F2937', borderRadius: '8px' }}
                   itemStyle={{ color: '#0EA5E9' }}
+                  formatter={(value) => [formatCurrency(value, currency), 'Revenue']}
                 />
-                <Bar dataKey="revenue" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="revenue" name="Revenue" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {!loading && !hasRevenueData && (
+            <p className="text-xs text-slate-400 text-center -mt-2">
+              No payments recorded in the last 6 months.
+            </p>
+          )}
         </Card>
       </div>
 
-      {/* Tables Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Live Check-ins */}
         <Card>
           <CardHeader>
             <CardTitle>
@@ -264,8 +292,12 @@ export function DashboardPage() {
             </button>
           </CardHeader>
           <div className="space-y-3">
-            {summary.recentCheckIns.length === 0 ? (
-              <p className="text-xs text-slate-400 py-4 text-center">No check-in logs recorded today.</p>
+            {loading ? (
+              <p className="text-xs text-slate-400 py-4 text-center">Loading check-ins...</p>
+            ) : summary.recentCheckIns.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">
+                No check-ins recorded yet.
+              </p>
             ) : (
               summary.recentCheckIns.map((item) => (
                 <div
@@ -274,18 +306,20 @@ export function DashboardPage() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
-                      {item.member_name ? item.member_name.charAt(0) : 'M'}
+                      {item.member_name?.charAt(0) || 'M'}
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-200">{item.member_name}</p>
-                      <p className="text-xs text-slate-400">{item.plan_name || 'Standard'}</p>
+                      <p className="text-xs text-slate-400 font-mono">{item.member_code}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs text-slate-400 block">{formatDate(item.check_in_time, 'hh:mm a')}</span>
+                    <span className="text-xs text-slate-400 block">
+                      {formatDate(item.check_in_time, 'MMM dd • hh:mm a')}
+                    </span>
                     <Badge variant="emerald" className="mt-1">
                       <CheckCircle2 className="w-3 h-3 mr-1" />
-                      Verified
+                      {item.method === 'MANUAL_ENTRY' ? 'Manual' : 'QR Scan'}
                     </Badge>
                   </div>
                 </div>
@@ -294,7 +328,6 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        {/* Expiring Subscriptions Alert */}
         <Card>
           <CardHeader>
             <CardTitle>
@@ -309,8 +342,12 @@ export function DashboardPage() {
             </button>
           </CardHeader>
           <div className="space-y-3">
-            {summary.expiringMemberships.length === 0 ? (
-              <p className="text-xs text-slate-400 py-4 text-center">No expiring memberships found.</p>
+            {loading ? (
+              <p className="text-xs text-slate-400 py-4 text-center">Loading memberships...</p>
+            ) : summary.expiringMemberships.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">
+                Nothing expires before {formatDate(new Date(Date.now() + 7 * 86400000))}.
+              </p>
             ) : (
               summary.expiringMemberships.map((item) => (
                 <div
@@ -319,10 +356,13 @@ export function DashboardPage() {
                 >
                   <div>
                     <p className="text-sm font-semibold text-slate-200">{item.full_name}</p>
-                    <p className="text-xs text-slate-400">{item.plan_name} • {item.phone || 'No phone'}</p>
+                    <p className="text-xs text-slate-400">
+                      {item.plan_name} • {item.member_code}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <Badge variant="amber">{item.expiration_date || 'Expires Soon'}</Badge>
+                    <Badge variant="amber">{formatDate(item.expiration_date)}</Badge>
+                    <p className="text-[10px] text-slate-500 mt-1">{item.phone}</p>
                   </div>
                 </div>
               ))

@@ -1,78 +1,102 @@
-import { useEffect, useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { authService } from '../services/authService';
 import { AuthContext } from './AuthContextInstance';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [needsBootstrap, setNeedsBootstrap] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
-    async function initAuth() {
+    async function init() {
       try {
-        if (!isSupabaseConfigured) {
-          const storedUser = localStorage.getItem('be_smart_demo_user');
-          if (storedUser) {
-            setUser(JSON.parse(storedUser));
-          }
-          setLoading(false);
-          return;
-        }
+        const [session, bootstrap] = await Promise.all([
+          supabase.auth.getSession(),
+          authService.needsBootstrap(),
+        ]);
 
-        const currentUser = await authService.getCurrentUser();
-        if (mounted) {
-          setUser(currentUser);
-          setLoading(false);
-        }
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          (_event, session) => {
-            if (mounted) {
-              setUser(session?.user ?? null);
-              setLoading(false);
-            }
-          }
-        );
-
-        return () => {
-          subscription.unsubscribe();
-        };
+        if (!active) return;
+        setNeedsBootstrap(bootstrap);
+        setUser(session.session?.user ? await authService.getCurrentUser() : null);
       } catch (err) {
-        console.error('Auth initialization error:', err);
-        if (mounted) {
-          setLoading(false);
-        }
+        console.error('Auth initialization failed:', err);
+        if (active) setUser(null);
+      } finally {
+        if (active) setLoading(false);
       }
     }
 
-    initAuth();
+    init();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        // Never await Supabase calls inside this callback: the auth client
+        // holds a lock that deadlocks if we do. Defer to the next tick.
+        setTimeout(async () => {
+          try {
+            setUser(session?.user ? await authService.getCurrentUser() : null);
+          } catch (err) {
+            console.error('Could not load profile for session:', err);
+            setUser(null);
+          } finally {
+            setLoading(false);
+          }
+        }, 0);
+      }
+    );
 
     return () => {
-      mounted = false;
+      active = false;
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
-  const login = async (email, password) => {
-    const data = await authService.signInWithEmail(email, password);
-    setUser(data.user);
-    return data;
-  };
+  // Called after the first admin is created, otherwise the router keeps
+  // bouncing the new admin back to /setup.
+  const markBootstrapComplete = useCallback(() => {
+    setNeedsBootstrap(false);
+  }, []);
 
-  const logout = async () => {
+  const login = useCallback(async (email, password) => {
+    const result = await authService.signInWithEmail(email, password);
+    setUser(result.user);
+    return result;
+  }, []);
+
+  const signupFirstAdmin = useCallback(async (payload) => {
+    const result = await authService.signUpFirstAdmin(payload);
+    // The account now exists, so the first-run screen is done either way.
+    // Otherwise /login would bounce back to /setup until a page reload.
+    markBootstrapComplete();
+    return result;
+  }, [markBootstrapComplete]);
+
+  const logout = useCallback(async () => {
     await authService.signOut();
     setUser(null);
-  };
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const current = await authService.getCurrentUser();
+    setUser(current);
+    return current;
+  }, []);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
-        isConfigured: isSupabaseConfigured,
+        needsBootstrap,
+        isAdmin: user?.role === 'admin',
         login,
+        signupFirstAdmin,
         logout,
+        refreshUser,
+        markBootstrapComplete,
       }}
     >
       {children}

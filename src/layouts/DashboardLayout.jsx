@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -14,14 +14,13 @@ import {
   Dumbbell,
   Menu,
   X,
-  Bell,
   Search,
   ChevronDown,
-  ShieldCheck,
   Building2,
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useGym } from '../hooks/useGym';
 import { cn } from '../utils/cn';
 import { formatDate } from '../utils/formatters';
 
@@ -41,30 +40,47 @@ export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [globalSearch, setGlobalSearch] = useState('');
 
   const { user, logout } = useAuth();
+  const { gymName, settings, branches } = useGym();
   const navigate = useNavigate();
 
-  // Live Ticking Clock Effect
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setUserMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/login');
+      navigate('/login', { replace: true });
     } catch (err) {
-      console.error('Logout error:', err);
+      console.error('Could not sign out:', err);
     }
   };
 
+  const handleGlobalSearch = (e) => {
+    e.preventDefault();
+    const term = globalSearch.trim();
+    if (!term) return;
+    navigate(`/members?q=${encodeURIComponent(term)}`);
+    setGlobalSearch('');
+  };
+
+  const activeBranch =
+    branches.find((branch) => branch.is_active) || branches[0] || null;
+
   return (
     <div className="min-h-screen bg-gym-950 flex">
-      {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-gym-950/80 backdrop-blur-sm lg:hidden"
@@ -72,58 +88,55 @@ export function DashboardLayout() {
         />
       )}
 
-      {/* Dark Sidebar */}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r border-gym-800/80 flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        {/* Brand Header */}
         <div className="h-16 px-5 flex items-center justify-between border-b border-gym-800/80">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-lg shadow-sky-500/20">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-lg shadow-sky-500/20 shrink-0">
               <Dumbbell className="w-5 h-5 stroke-[2.5]" />
             </div>
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="font-extrabold text-slate-100 tracking-tight text-sm">
-                  BE SMART
-                </span>
-                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-brand-cyan/20 text-brand-cyan rounded border border-brand-cyan/30 uppercase">
-                  CLUB
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 font-medium">Fitness Club System</p>
+            <div className="min-w-0">
+              <p className="font-extrabold text-slate-100 tracking-tight text-sm truncate">
+                {gymName}
+              </p>
+              <p className="text-[10px] text-slate-400 font-medium truncate">
+                {settings.tagline || 'Gym management system'}
+              </p>
             </div>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg lg:hidden hover:bg-gym-800"
+            className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg lg:hidden hover:bg-gym-800 shrink-0"
+            aria-label="Close navigation"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Branch Switcher Badge */}
-        <div className="px-4 py-3 border-b border-gym-800/50">
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-gym-800 text-xs">
-            <div className="flex items-center gap-2 text-slate-300 font-medium">
-              <Building2 className="w-4 h-4 text-brand-cyan shrink-0" />
-              <span className="truncate">Sri Lanka HQ</span>
+        {activeBranch && (
+          <div className="px-4 py-3 border-b border-gym-800/50">
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gym-950 border border-gym-800 text-xs">
+              <div className="flex items-center gap-2 text-slate-300 font-medium min-w-0">
+                <Building2 className="w-4 h-4 text-brand-cyan shrink-0" />
+                <span className="truncate">{activeBranch.name}</span>
+              </div>
+              <span className="w-2 h-2 rounded-full bg-brand-emerald shrink-0" />
             </div>
-            <span className="w-2 h-2 rounded-full bg-brand-emerald animate-pulse"></span>
           </div>
-        </div>
+        )}
 
-        {/* Navigation Items */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
-                key={item.name}
+                key={item.path}
                 to={item.path}
+                end={item.path === '/'}
                 onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
                   cn(
@@ -149,70 +162,64 @@ export function DashboardLayout() {
             );
           })}
 
-          {/* Logout Navigation Option */}
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all group mt-6"
           >
-            <LogOut className="w-5 h-5 shrink-0 text-slate-400 group-hover:text-rose-400 transition-transform group-hover:scale-110" />
-            <span>Logout</span>
+            <LogOut className="w-5 h-5 shrink-0 transition-transform group-hover:scale-110" />
+            <span>Sign out</span>
           </button>
         </nav>
 
-        {/* System Status Footer */}
         <div className="p-4 border-t border-gym-800/80 bg-gym-950/40">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="w-4 h-4 text-brand-emerald shrink-0" />
-            <span>RLS Active</span>
-            <span className="ml-auto text-[10px] px-2 py-0.5 rounded bg-gym-800 text-slate-300 font-mono">
-              v1.0.0
-            </span>
-          </div>
+          <p className="text-[10px] text-slate-500 leading-relaxed">
+            {settings.opening_time} - {settings.closing_time}
+            {settings.phone ? ` • ${settings.phone}` : ''}
+          </p>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Navbar */}
-        <header className="h-16 bg-gym-900/90 border-b border-gym-800/80 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 backdrop-blur-md">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-gym-900/90 border-b border-gym-800/80 sticky top-0 z-30 flex items-center justify-between gap-4 px-4 sm:px-6 backdrop-blur-md">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="p-2 text-slate-400 hover:text-slate-100 rounded-lg lg:hidden hover:bg-gym-800"
+              className="p-2 text-slate-400 hover:text-slate-100 rounded-lg lg:hidden hover:bg-gym-800 shrink-0"
+              aria-label="Open navigation"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Brand Logo & Name Header */}
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20 shrink-0">
                 <Dumbbell className="w-5 h-5" />
               </div>
-              <div>
-                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
-                  Be Smart Fitness Club
+              <div className="min-w-0">
+                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none truncate">
+                  {gymName}
                 </h1>
-                <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block">
-                  Sri Lanka Gym Management System
+                <p className="text-[10px] text-slate-400 mt-0.5 hidden sm:block truncate">
+                  {settings.address || 'Gym management system'}
                 </p>
               </div>
             </div>
 
-            {/* Quick Search */}
-            <div className="relative hidden xl:block w-64 ml-4">
+            <form onSubmit={handleGlobalSearch} className="relative hidden xl:block w-64 ml-4">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="text"
-                placeholder="Search member, ID, plan..."
+                type="search"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="Search members..."
+                aria-label="Search members"
                 className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-gym-950 border border-gym-800/80 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-cyan"
               />
-            </div>
+            </form>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            {/* Live Ticking Clock (Sri Lanka Local Time) */}
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gym-950 border border-gym-800 text-xs font-mono text-brand-cyan shadow-inner">
-              <Clock className="w-4 h-4 text-brand-cyan animate-pulse shrink-0" />
+              <Clock className="w-4 h-4 text-brand-cyan shrink-0" />
               <div className="text-right leading-tight">
                 <span className="font-bold text-slate-100 block">
                   {currentTime.toLocaleTimeString('en-LK', { hour12: true })}
@@ -223,54 +230,47 @@ export function DashboardLayout() {
               </div>
             </div>
 
-            {/* Notifications */}
-            <button className="p-2 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-gym-800/80 relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-cyan ring-2 ring-gym-900"></span>
-            </button>
-
-            {/* User Profile Menu */}
             <div className="relative">
               <button
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                onClick={() => setUserMenuOpen((prev) => !prev)}
                 className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-gym-800/80 transition"
+                aria-label="Account menu"
+                aria-expanded={userMenuOpen}
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-violet flex items-center justify-center font-bold text-white text-xs shadow-md">
-                  {user?.email?.charAt(0).toUpperCase() || 'A'}
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-violet flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
+                  {user?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'S'}
                 </div>
-                <div className="hidden md:block text-left">
-                  <p className="text-xs font-semibold text-slate-200 leading-tight">
-                    {user?.full_name || 'Admin User'}
+                <div className="hidden md:block text-left min-w-0">
+                  <p className="text-xs font-semibold text-slate-200 leading-tight truncate max-w-[140px]">
+                    {user?.full_name || 'Staff'}
                   </p>
-                  <p className="text-[10px] text-slate-400">{user?.email || 'admin@besmartfitness.lk'}</p>
+                  <p className="text-[10px] text-slate-400 capitalize">{user?.role || 'staff'}</p>
                 </div>
-                <ChevronDown className="w-4 h-4 text-slate-400 hidden md:block" />
+                <ChevronDown className="w-4 h-4 text-slate-400 hidden md:block shrink-0" />
               </button>
 
               {userMenuOpen && (
-                <div
-                  className="absolute right-0 mt-2 w-56 bg-gym-900 border border-gym-800 rounded-xl shadow-2xl py-2 z-50"
-                  onClick={() => setUserMenuOpen(false)}
-                >
+                <div className="absolute right-0 mt-2 w-56 bg-gym-900 border border-gym-800 rounded-xl shadow-2xl py-2 z-50">
                   <div className="px-4 py-2.5 border-b border-gym-800">
-                    <p className="text-xs font-semibold text-slate-200">
-                      {user?.full_name || 'Admin User'}
+                    <p className="text-xs font-semibold text-slate-200 truncate">
+                      {user?.full_name || 'Staff'}
                     </p>
                     <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
                   </div>
                   <NavLink
                     to="/settings"
+                    onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-2 px-4 py-2 text-xs text-slate-300 hover:bg-gym-800 hover:text-white"
                   >
                     <Settings className="w-4 h-4 text-slate-400" />
-                    Account Settings
+                    Account settings
                   </NavLink>
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 px-4 py-2 text-xs text-rose-400 hover:bg-rose-500/10"
                   >
                     <LogOut className="w-4 h-4 text-rose-400" />
-                    Sign Out
+                    Sign out
                   </button>
                 </div>
               )}
@@ -278,7 +278,6 @@ export function DashboardLayout() {
           </div>
         </header>
 
-        {/* Dynamic Page Container */}
         <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
           <Outlet />
         </main>

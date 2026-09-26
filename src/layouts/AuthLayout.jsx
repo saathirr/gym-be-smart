@@ -1,7 +1,10 @@
 import { Outlet } from 'react-router-dom';
 import { Dumbbell } from 'lucide-react';
+import { useGym } from '../hooks/useGym';
 
 export function AuthLayout() {
+  const { gymName } = useGym();
+
   return (
     <div className="min-h-screen bg-gym-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Background Decorative Blur Orbs */}
@@ -13,10 +16,9 @@ export function AuthLayout() {
           <div className="p-3 rounded-2xl bg-gradient-to-tr from-brand-cyan to-sky-400 text-gym-950 font-bold shadow-xl shadow-sky-500/20">
             <Dumbbell className="w-8 h-8 stroke-[2.5]" />
           </div>
-          <div>
-            <span className="font-black text-2xl text-slate-100 tracking-tight">BE SMART </span>
-            <span className="text-2xl font-black text-brand-cyan">FITNESS CLUB</span>
-          </div>
+          <h1 className="font-black text-2xl text-slate-100 tracking-tight text-center">
+            {gymName}
+          </h1>
         </div>
         <h2 className="text-center text-xs text-slate-400 font-medium tracking-wider uppercase">
           Sri Lanka Gym Management System
@@ -28,7 +30,7 @@ export function AuthLayout() {
       </div>
 
       <footer className="mt-12 text-center text-xs text-slate-500 relative z-10">
-        &copy; {new Date().getFullYear()} Be Smart Fitness Club. All rights reserved.
+        &copy; {new Date().getFullYear()} {gymName}. All rights reserved.
       </footer>
     </div>
   );

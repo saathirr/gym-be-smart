@@ -1,205 +1,247 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { addDays } from 'date-fns';
 
+const MEMBER_SELECT = `
+  id,
+  member_code,
+  qr_code_id,
+  full_name,
+  nic_number,
+  email,
+  phone,
+  whatsapp_number,
+  district,
+  address,
+  gender,
+  date_of_birth,
+  emergency_contact,
+  medical_conditions,
+  branch_id,
+  status,
+  created_at,
+  memberships (
+    id,
+    start_date,
+    end_date,
+    status,
+    plans ( id, name, price, duration_days )
+  )
+`;
+
+function withPlanSummary(member) {
+  const open = member.memberships?.find(
+    (sub) => sub.status === 'Active' || sub.status === 'Expiring'
+  );
+  const current = open || member.memberships?.[0];
+
+  return {
+    ...member,
+    plan_id: current?.plans?.id ?? null,
+    plan_name: current?.plans?.name || 'No Active Plan',
+    plan_price: current?.plans?.price ?? null,
+    membership_id: current?.id ?? null,
+    membership_status: current?.status ?? null,
+    start_date: current?.start_date ?? null,
+    expiration_date: current?.end_date || null,
+  };
+}
+
+function emptyMemberForm() {
+  return {
+    full_name: '',
+    nic_number: '',
+    phone: '',
+    whatsapp_number: '',
+    email: '',
+    district: 'Colombo',
+    address: '',
+    gender: 'Male',
+    date_of_birth: '',
+    emergency_contact: '',
+    medical_conditions: '',
+    branch_id: '',
+  };
+}
+
 export const memberService = {
-  async getMembers(searchQuery = '', statusFilter = 'ALL') {
-    if (!isSupabaseConfigured) {
-      const stored = localStorage.getItem('be_smart_members');
-      let list = stored ? JSON.parse(stored) : [];
+  emptyMemberForm,
 
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        list = list.filter(
-          (m) =>
-            m.full_name?.toLowerCase().includes(q) ||
-            m.member_code?.toLowerCase().includes(q) ||
-            (m.email && m.email.toLowerCase().includes(q)) ||
-            (m.phone && m.phone.includes(q))
-        );
-      }
+  async getMembers({ search = '', status = 'ALL', branchId = 'ALL', limit = 200 } = {}) {
+    let query = supabase
+      .from('members')
+      .select(MEMBER_SELECT)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-      if (statusFilter && statusFilter !== 'ALL') {
-        list = list.filter((m) => m.status?.toUpperCase() === statusFilter.toUpperCase());
-      }
-
-      return list;
+    if (search.trim()) {
+      const term = search.trim().replace(/[%,()]/g, ' ');
+      query = query.or(
+        `full_name.ilike.%${term}%,member_code.ilike.%${term}%,nic_number.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`
+      );
     }
 
-    let query = supabase.from('members').select(`
-      *,
-      memberships (
-        id,
-        start_date,
-        end_date,
-        status,
-        plans ( name )
-      )
-    `).order('created_at', { ascending: false });
-
-    if (searchQuery) {
-      query = query.or(`full_name.ilike.%${searchQuery}%,member_code.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`);
+    if (status && status !== 'ALL') {
+      query = query.eq('status', status);
     }
 
-    if (statusFilter && statusFilter !== 'ALL') {
-      query = query.eq('status', statusFilter);
+    if (branchId && branchId !== 'ALL') {
+      query = query.eq('branch_id', branchId);
     }
 
     const { data, error } = await query;
-    if (error) {
-      console.error('Error fetching members:', error);
-      return [];
-    }
+    if (error) throw error;
 
-    return (data || []).map((m) => {
-      const activeMembership = m.memberships?.find((sub) => sub.status === 'Active') || m.memberships?.[0];
-      return {
-        ...m,
-        plan_name: activeMembership?.plans?.name || 'No Active Plan',
-        expiration_date: activeMembership?.end_date || 'N/A',
-      };
-    });
+    return (data || []).map(withPlanSummary);
   },
 
-  async getMemberByQR(qrCodeId) {
-    if (!isSupabaseConfigured) {
-      const members = await this.getMembers();
-      return members.find((m) => m.qr_code_id === qrCodeId || m.member_code === qrCodeId) || null;
-    }
+  async getMemberById(id) {
+    const { data, error } = await supabase
+      .from('members')
+      .select(MEMBER_SELECT)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? withPlanSummary(data) : null;
+  },
+
+  // Accepts either the QR payload or the human-readable member code.
+  async getMemberByPass(passValue) {
+    const value = passValue?.trim();
+    if (!value) return null;
 
     const { data, error } = await supabase
       .from('members')
-      .select(`
-        *,
-        memberships (
-          id,
-          start_date,
-          end_date,
-          status,
-          plans ( name )
-        )
-      `)
-      .or(`qr_code_id.eq.${qrCodeId},member_code.eq.${qrCodeId}`)
-      .maybeSingle();
+      .select(MEMBER_SELECT)
+      .or(`qr_code_id.eq.${value},member_code.eq.${value}`)
+      .limit(1);
 
-    if (error) {
-      console.error('Error querying member by QR:', error);
-      return null;
-    }
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
 
-    if (!data) return null;
-
-    const activeMembership = data.memberships?.find((sub) => sub.status === 'Active') || data.memberships?.[0];
-    return {
-      ...data,
-      plan_name: activeMembership?.plans?.name || 'No Active Plan',
-      expiration_date: activeMembership?.end_date || 'N/A',
-    };
+    return withPlanSummary(data[0]);
   },
 
-  async createMember(memberPayload, planId) {
-    const randomCodeNum = Math.floor(1000 + Math.random() * 9000);
-    const memberCode = `BSG-${randomCodeNum}`;
-    const qrCodeId = `QR-${memberCode}-${Date.now().toString(36).toUpperCase()}`;
+  async createMember(payload, planId) {
+    const { data: codeRow, error: codeError } = await supabase.rpc('next_member_code');
+    if (codeError) throw codeError;
 
-    if (!isSupabaseConfigured) {
-      const existing = await this.getMembers();
-      const newMember = {
-        ...memberPayload,
-        id: `m-${Date.now()}`,
-        member_code: memberCode,
-        qr_code_id: qrCodeId,
-        status: 'Active',
-        created_at: new Date().toISOString(),
-        plan_name: memberPayload.plan_name || 'Basic Monthly',
-        expiration_date: addDays(new Date(), 30).toISOString().split('T')[0],
-      };
+    const memberCode = codeRow;
+    const qrCodeId = `${memberCode}.${Date.now().toString(36).toUpperCase()}`;
 
-      const updated = [newMember, ...existing];
-      localStorage.setItem('be_smart_members', JSON.stringify(updated));
-      return newMember;
-    }
-
-    // Insert Member
-    const { data: member, error: memberErr } = await supabase
+    const { data: member, error } = await supabase
       .from('members')
       .insert([
         {
           member_code: memberCode,
           qr_code_id: qrCodeId,
-          full_name: memberPayload.full_name,
-          email: memberPayload.email,
-          phone: memberPayload.phone,
-          gender: memberPayload.gender || 'Male',
-          emergency_contact: memberPayload.emergency_contact,
-          medical_conditions: memberPayload.medical_conditions,
+          full_name: payload.full_name.trim(),
+          nic_number: payload.nic_number?.trim() || null,
+          email: payload.email?.trim() || null,
+          phone: payload.phone.trim(),
+          whatsapp_number: payload.whatsapp_number?.trim() || null,
+          district: payload.district || null,
+          address: payload.address?.trim() || null,
+          gender: payload.gender || 'Male',
+          date_of_birth: payload.date_of_birth || null,
+          emergency_contact: payload.emergency_contact?.trim() || null,
+          medical_conditions: payload.medical_conditions?.trim() || null,
+          branch_id: payload.branch_id || null,
           status: 'Active',
         },
       ])
-      .select()
+      .select(MEMBER_SELECT)
       .single();
 
-    if (memberErr) throw memberErr;
+    if (error) throw error;
 
-    // Create Initial Membership
     if (planId) {
-      const { data: plan } = await supabase.from('plans').select('duration_days, price').eq('id', planId).single();
-      const durationDays = plan?.duration_days || 30;
-      const startDate = new Date().toISOString().split('T')[0];
-      const endDate = addDays(new Date(), durationDays).toISOString().split('T')[0];
+      const { data: plan, error: planError } = await supabase
+        .from('plans')
+        .select('id, name, price, duration_days')
+        .eq('id', planId)
+        .maybeSingle();
 
-      await supabase.from('memberships').insert([
-        {
-          member_id: member.id,
-          plan_id: planId,
-          start_date: startDate,
-          end_date: endDate,
-          status: 'Active',
-        },
-      ]);
+      if (planError) throw planError;
 
-      // Record Payment
-      if (plan?.price) {
-        const receiptNo = `REC-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-        await supabase.from('payments').insert([
-          {
-            member_id: member.id,
-            amount: plan.price,
-            payment_method: memberPayload.payment_method || 'Cash',
-            payment_status: 'Paid',
-            receipt_number: receiptNo,
-          },
-        ]);
+      if (plan) {
+        const startDate = new Date().toISOString().slice(0, 10);
+        const endDate = addDays(new Date(), plan.duration_days).toISOString().slice(0, 10);
+
+        const { data: membership, error: membershipError } = await supabase
+          .from('memberships')
+          .insert([
+            {
+              member_id: member.id,
+              plan_id: plan.id,
+              start_date: startDate,
+              end_date: endDate,
+              status: 'Active',
+            },
+          ])
+          .select('id')
+          .single();
+
+        if (membershipError) throw membershipError;
+
+        if (Number(plan.price) > 0) {
+          const { data: receiptRow, error: receiptError } = await supabase.rpc(
+            'next_receipt_number'
+          );
+          if (receiptError) throw receiptError;
+
+          const { error: paymentError } = await supabase.from('payments').insert([
+            {
+              member_id: member.id,
+              membership_id: membership.id,
+              amount: plan.price,
+              payment_method: payload.payment_method || 'Cash',
+              payment_status: 'Paid',
+              receipt_number: receiptRow,
+              notes: `New membership - ${plan.name}`,
+            },
+          ]);
+
+          if (paymentError) throw paymentError;
+        }
       }
     }
 
-    return member;
+    return withPlanSummary(member);
   },
 
-  async updateMemberStatus(id, newStatus) {
-    if (!isSupabaseConfigured) {
-      const existing = await this.getMembers();
-      const updated = existing.map((m) => (m.id === id ? { ...m, status: newStatus } : m));
-      localStorage.setItem('be_smart_members', JSON.stringify(updated));
-      return true;
-    }
-
-    const { error } = await supabase
+  async updateMember(id, payload) {
+    const { data, error } = await supabase
       .from('members')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .update({
+        full_name: payload.full_name.trim(),
+        nic_number: payload.nic_number?.trim() || null,
+        email: payload.email?.trim() || null,
+        phone: payload.phone.trim(),
+        whatsapp_number: payload.whatsapp_number?.trim() || null,
+        district: payload.district || null,
+        address: payload.address?.trim() || null,
+        gender: payload.gender || 'Male',
+        date_of_birth: payload.date_of_birth || null,
+        emergency_contact: payload.emergency_contact?.trim() || null,
+        medical_conditions: payload.medical_conditions?.trim() || null,
+        branch_id: payload.branch_id || null,
+      })
+      .eq('id', id)
+      .select(MEMBER_SELECT)
+      .single();
 
+    if (error) throw error;
+    return withPlanSummary(data);
+  },
+
+  async updateMemberStatus(id, status) {
+    const { error } = await supabase.from('members').update({ status }).eq('id', id);
     if (error) throw error;
     return true;
   },
 
   async deleteMember(id) {
-    if (!isSupabaseConfigured) {
-      const existing = await this.getMembers();
-      const updated = existing.filter((m) => m.id !== id);
-      localStorage.setItem('be_smart_members', JSON.stringify(updated));
-      return true;
-    }
-
     const { error } = await supabase.from('members').delete().eq('id', id);
     if (error) throw error;
     return true;

@@ -7,6 +7,7 @@ import { AuthLayout } from '../layouts/AuthLayout';
 
 // Pages
 import { LoginPage } from '../pages/LoginPage';
+import { SetupPage } from '../pages/SetupPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { MembersPage } from '../pages/MembersPage';
 import { AttendancePage } from '../pages/AttendancePage';
@@ -18,22 +19,31 @@ import { ReportsPage } from '../pages/ReportsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
-// Protected Route Guard Component
+function FullPageLoader({ label = 'Loading your club...' }) {
+  return (
+    <div className="min-h-screen bg-gym-950 flex flex-col items-center justify-center gap-4">
+      <div className="w-10 h-10 border-4 border-brand-cyan border-t-transparent rounded-full animate-spin" />
+      <p className="text-xs text-slate-400 font-medium">{label}</p>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, needsBootstrap } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gym-950 flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 border-4 border-brand-cyan border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs text-slate-400 font-medium">Initializing Be Smart Gym System...</p>
-      </div>
-    );
-  }
+  if (loading) return <FullPageLoader />;
+  if (needsBootstrap) return <Navigate to="/setup" replace />;
+  if (!user) return <Navigate to="/login" replace />;
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  return children;
+}
+
+function PublicOnlyRoute({ children }) {
+  const { user, loading, needsBootstrap } = useAuth();
+
+  if (loading) return <FullPageLoader />;
+  if (needsBootstrap) return <Navigate to="/setup" replace />;
+  if (user) return <Navigate to="/" replace />;
 
   return children;
 }
@@ -41,12 +51,27 @@ function ProtectedRoute({ children }) {
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Public Auth Routes */}
+      {/* First-run: create the very first admin account */}
       <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/setup"
+          element={
+            <PublicOnlyRoute>
+              <SetupPage />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/login"
+          element={
+            <PublicOnlyRoute>
+              <LoginPage />
+            </PublicOnlyRoute>
+          }
+        />
       </Route>
 
-      {/* Protected Gym Operations Routes */}
+      {/* Club operations */}
       <Route
         element={
           <ProtectedRoute>
