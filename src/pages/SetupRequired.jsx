@@ -1,9 +1,17 @@
 import { AlertTriangle, Terminal } from 'lucide-react';
 
+// Read each variable through a static `import.meta.env.X` access. A dynamic
+// `import.meta.env[key]` cannot be replaced at build time, which makes Vite
+// inline the whole env object into the bundle and publish every VITE_* var.
+const CONFIGURED = {
+  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL?.trim(),
+  VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim(),
+};
+
 const MISSING = [
   ['VITE_SUPABASE_URL', 'Your Supabase project URL'],
   ['VITE_SUPABASE_ANON_KEY', 'Your Supabase anon public key'],
-].filter(([key]) => !import.meta.env[key]?.trim());
+].filter(([key]) => !CONFIGURED[key]);
 
 export function SetupRequired() {
   return (
