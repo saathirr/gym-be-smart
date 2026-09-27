@@ -22,7 +22,7 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { memberService } from '../services/memberService';
-import { planService } from '../services/planService';
+import { planService, pickDefaultPlan } from '../services/planService';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
@@ -126,7 +126,7 @@ export function MembersPage() {
 
   const openAddModal = () => {
     setEditingMember(null);
-    setFormData({ ...blankForm(), plan_id: plans[0]?.id || '' });
+    setFormData({ ...blankForm(), plan_id: pickDefaultPlan(plans)?.id || '' });
     setFormError('');
     setIsAddModalOpen(true);
   };

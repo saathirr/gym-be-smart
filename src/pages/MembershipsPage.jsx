@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { membershipService } from '../services/membershipService';
-import { planService } from '../services/planService';
+import { planService, pickDefaultPlan } from '../services/planService';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { useGym } from '../hooks/useGym';
 import { toMessage } from '../lib/supabaseErrors';
@@ -78,8 +78,7 @@ export function MembershipsPage() {
   const handleOpenRenewModal = (sub) => {
     setSelectedSub(sub);
     setRenewError('');
-    const samePlan = plans.find((p) => p.id === sub.plan_id) || plans[0];
-    setSelectedPlanId(samePlan?.id || '');
+    setSelectedPlanId(pickDefaultPlan(plans, sub.plan_id)?.id || '');
     setPaymentMethod('Cash');
   };
 
@@ -270,7 +269,9 @@ export function MembershipsPage() {
                           size="sm"
                           onClick={() => {
                             setSelectedSub(item);
-                            setSelectedPlanId(item.plan_id || plans[0]?.id || '');
+                            setSelectedPlanId(
+                              pickDefaultPlan(plans, item.plan_id)?.id || ''
+                            );
                             setRenewError('');
                             setPaymentMethod('Cash');
                           }}

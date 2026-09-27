@@ -13,6 +13,21 @@ function normalize(plan) {
   };
 }
 
+// Plans come back cheapest first, so plans[0] is the LKR 250 day pass. Using
+// that as the preselected plan in a form would quietly sell a one-day pass to
+// someone registering a normal membership, so default to the longest plan
+// instead. Pass preferredId to keep a member on the plan they already have.
+export function pickDefaultPlan(plans, preferredId) {
+  if (!Array.isArray(plans) || plans.length === 0) return undefined;
+
+  const preferred = plans.find((plan) => plan.id === preferredId);
+  if (preferred) return preferred;
+
+  return plans.reduce((longest, plan) =>
+    plan.duration_days > longest.duration_days ? plan : longest
+  );
+}
+
 export const planService = {
   async getPlans({ includeInactive = true } = {}) {
     let query = supabase

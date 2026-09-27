@@ -302,7 +302,7 @@ export function PlansPage() {
 
           <Input
             label="Plan name *"
-            placeholder="e.g. Gold Quarterly"
+            placeholder="e.g. Day Payment"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             required

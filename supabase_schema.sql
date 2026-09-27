@@ -624,21 +624,35 @@ REVOKE ALL ON FUNCTION public.sync_expired_memberships() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.sync_expired_memberships() TO authenticated;
 
 -- =====================================================================
--- OPTIONAL STARTER DATA
--- Delete this block if you want to enter your own plan tiers by hand.
+-- STARTER DATA
+-- ---------------------------------------------------------------------
+-- The club only sells two tiers: a single day pass and a monthly pass.
+-- There is deliberately no Quarterly or Annual tier any more.
+--
+-- Retiring a plan is not the same as deleting it: memberships reference
+-- plans with ON DELETE RESTRICT, so a tier that has already been sold has
+-- to stay in the table to keep those memberships readable. Suppressing it
+-- with is_active = FALSE is what actually removes it from every plan
+-- dropdown, and the day pass reporting falls back on duration_days = 1 so
+-- it classifies correctly either way.
 -- =====================================================================
 INSERT INTO public.plans (name, description, duration_days, price, features)
 SELECT * FROM (VALUES
-  ('Monthly', 'Standard access to the gym floor and cardio zone.', 30, 4500,
-   '["Gym Floor Access", "Cardio Zone", "Locker Room", "Free Towel Service"]'::jsonb),
-  ('Quarterly', 'Three months of access with a discounted monthly rate.', 90, 12000,
-   '["Everything in Monthly", "Sauna Access", "Body Composition Check"]'::jsonb),
-  ('Annual', 'Best value per month, includes guest passes.', 365, 42000,
-   '["Everything in Quarterly", "Unlimited Guest Passes", "Personal Trainer Session"]'::jsonb)
+  ('Day Payment', 'Single day access, sold as a one-day membership.', 1, 250,
+   '["Gym Floor Access", "Cardio Zone", "Locker Room"]'::jsonb),
+  ('Monthly', 'Standard access to the gym floor and cardio zone.', 30, 2500,
+   '["Gym Floor Access", "Cardio Zone", "Locker Room", "Free Towel Service"]'::jsonb)
 ) AS seed(name, description, duration_days, price, features)
 WHERE NOT EXISTS (
-  SELECT 1 FROM public.plans p WHERE p.name = seed.name
+  SELECT 1 FROM public.plans p WHERE lower(btrim(p.name)) = lower(btrim(seed.name))
 );
+
+-- Anything outside the two tiers above is switched off so it stops showing
+-- up as a choice. Re-runnable: it only touches rows that are still active.
+UPDATE public.plans
+   SET is_active = FALSE
+ WHERE is_active
+   AND lower(btrim(name)) NOT IN ('day payment', 'monthly');
 
 -- =====================================================================
 -- SETUP COMPLETE

@@ -1,6 +1,6 @@
 -- =====================================================================
 -- BE SMART FITNESS CLUB - PHASE 2 MIGRATION
--- Day Pass + Monthly pricing, attendance calendar dates, month reporting
+-- Day Payment + Monthly pricing, attendance calendar dates, month reporting
 -- ---------------------------------------------------------------------
 -- HOW TO USE
 --   Supabase Dashboard -> SQL Editor -> New query -> paste -> Run.
@@ -21,15 +21,24 @@
 --     day, this script reports the count and SKIPS the unique index
 --     instead of silently merging or deleting your records. See section 5.
 --
--- THE ONE DATA CHANGE THIS SCRIPT MAKES
---   The "Monthly" plan price is set to LKR 2500 (the schema seed says
---   4500) and a "Day Pass" plan is created at LKR 250 for 1 day. Only the
---   plans table is touched. Historical payments and existing membership
---   rows are NOT affected, because the amount charged is stored on each
---   payments row, not read from the plan at reporting time.
+-- THE DATA CHANGES THIS SCRIPT MAKES
+--   The club offers exactly two tiers, and this script is the authority on
+--   both their prices and on nothing else being offered:
 --
---   If you have other plans (Quarterly / Annual) they are left exactly as
---   they are. Their prices are not part of this change.
+--     Day Payment   1 day    LKR 250    (is_day_pass = TRUE)
+--     Monthly      30 days   LKR 2500
+--
+--   The "Monthly" price is corrected down from the schema seed's 4500. The
+--   one-day tier is called "Day Payment"; a pre-existing "Day Pass" row is
+--   renamed rather than duplicated. Every other plan (Quarterly, Annual,
+--   anything hand-entered) is deactivated so it disappears from all plan
+--   dropdowns - it is not deleted, because memberships reference plans with
+--   ON DELETE RESTRICT and an already-sold tier has to stay in the table for
+--   those rows to keep resolving.
+--
+--   Only the plans table is touched. Historical payments and existing
+--   membership rows are NOT affected, because the amount charged is stored
+--   on each payments row, not read from the plan at reporting time.
 --
 -- NOT INCLUDED ON PURPOSE
 --   * The check-in RPC / attendance engine. That is Phase 3 application
@@ -267,41 +276,58 @@ ALTER TABLE public.plans
 
 
 -- =====================================================================
--- 7. PLAN PRICING - DAY PASS LKR 250, MONTHLY LKR 2500
+-- 7. PLAN PRICING - DAY PAYMENT LKR 250, MONTHLY LKR 2500
 -- ---------------------------------------------------------------------
--- Matched on the trimmed, case-insensitive name so this is re-runnable and
--- works whether or not the plans table is currently empty. Quarterly and
--- Annual are deliberately not touched.
+-- The club only sells two tiers. Matched on the trimmed, case-insensitive
+-- name so this is re-runnable and works whether or not the plans table is
+-- currently empty.
+--
+-- The one-day tier used to be called "Day Pass". It is renamed to "Day
+-- Payment" rather than inserted a second time, otherwise a database that
+-- already ran this migration would end up with two one-day plans and
+-- idx_plans_name_unique would not be the only thing stopping a mess.
 -- =====================================================================
 DO $$
 DECLARE
   v_id UUID;
 BEGIN
-  -- Day Pass ------------------------------------------------------------
+  -- Day Payment ---------------------------------------------------------
   SELECT id INTO v_id
     FROM public.plans
-   WHERE lower(btrim(name)) = 'day pass'
+   WHERE lower(btrim(name)) = 'day payment'
    LIMIT 1;
+
+  IF v_id IS NULL THEN
+    -- Not renamed yet: adopt the legacy "Day Pass" row if there is one.
+    UPDATE public.plans
+       SET name = 'Day Payment'
+     WHERE lower(btrim(name)) = 'day pass'
+       AND NOT EXISTS (
+         SELECT 1 FROM public.plans WHERE lower(btrim(name)) = 'day payment')
+     RETURNING id INTO v_id;
+  END IF;
 
   IF v_id IS NULL THEN
     INSERT INTO public.plans
       (name, description, duration_days, price, features, is_active, is_day_pass)
     VALUES
-      ('Day Pass',
+      ('Day Payment',
        'Single day access, sold as a one-day membership.',
        1, 250,
        '["Gym Floor Access", "Cardio Zone", "Locker Room"]'::jsonb,
        TRUE, TRUE);
-    RAISE NOTICE 'Created plan "Day Pass" - 1 day, LKR 250.';
+    RAISE NOTICE 'Created plan "Day Payment" - 1 day, LKR 250.';
   ELSE
     UPDATE public.plans
-       SET duration_days = 1,
+       SET name = 'Day Payment',
+           duration_days = 1,
            price = 250,
            is_day_pass = TRUE,
+           is_active = TRUE,
            description = COALESCE(
              description, 'Single day access, sold as a one-day membership.')
      WHERE id = v_id;
-    RAISE NOTICE 'Updated existing plan "Day Pass" to 1 day / LKR 250.';
+    RAISE NOTICE 'Updated existing plan "Day Payment" to 1 day / LKR 250.';
   END IF;
 
   -- Monthly -------------------------------------------------------------
@@ -324,9 +350,39 @@ BEGIN
     UPDATE public.plans
        SET duration_days = 30,
            price = 2500,
-           is_day_pass = FALSE
+           is_day_pass = FALSE,
+           is_active = TRUE
      WHERE id = v_id;
     RAISE NOTICE 'Updated existing plan "Monthly" to 30 days / LKR 2500.';
+  END IF;
+END;
+$$;
+
+-- -------------------------------------------------------------------------
+-- Retire every other tier. Quarterly and Annual are not deleted: memberships
+-- reference them with ON DELETE RESTRICT, so an already-sold tier must stay in
+-- the table for those rows to keep resolving. is_active = FALSE is what
+-- actually removes a plan from the app - both the member registration and the
+-- renewal dropdown read only active plans. Re-runnable: it only touches rows
+-- that are still active.
+-- -------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_count INT;
+BEGIN
+  UPDATE public.plans
+     SET is_active = FALSE
+   WHERE is_active
+     AND lower(btrim(name)) NOT IN ('day payment', 'monthly');
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  IF v_count > 0 THEN
+    RAISE NOTICE
+      'Deactivated % other plan(s). Only "Day Payment" (1 day / LKR 250) and "Monthly" (30 days / LKR 2500) are now offered.',
+      v_count;
+  ELSE
+    RAISE NOTICE 'No other plans to deactivate - the two tiers were already the only active ones.';
   END IF;
 END;
 $$;
