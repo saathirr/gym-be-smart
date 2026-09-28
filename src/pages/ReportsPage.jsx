@@ -25,6 +25,7 @@ import { memberService } from '../services/memberService';
 import { attendanceService } from '../services/attendanceService';
 import { dashboardService } from '../services/dashboardService';
 import { formatDate } from '../utils/formatters';
+import { formatTimestamp } from '../utils/attendanceMath';
 import { chartTheme } from '../utils/chartTheme';
 import { useGym } from '../hooks/useGym';
 import { useTheme } from '../hooks/useTheme';
@@ -61,21 +62,24 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState('');
-  const { gymName, currency } = useGym();
+  const { gymName, currency, settings } = useGym();
   const { isDark } = useTheme();
   const chart = chartTheme(isDark);
+  // Peak hours are the club's opening hours, so the buckets have to be the
+  // club's local clock and not the laptop's.
+  const timeZone = settings?.timezone;
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      setPeakHours(await dashboardService.getPeakHours(7));
+      setPeakHours(await dashboardService.getPeakHours(7, { timeZone }));
     } catch (err) {
       setError(toMessage(err, 'Could not load report data.'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [timeZone]);
 
   useEffect(() => {
     load();
@@ -143,13 +147,16 @@ export function ReportsPage() {
           )
         );
       } else {
-        const logs = await attendanceService.getAttendanceLogs({ limit: 2000 });
+        const logs = await attendanceService.getAttendanceLogs({ limit: 2000, timeZone });
         const rows = logs.map((log) => [
           log.member_code,
           log.member_name,
           log.plan_name,
-          log.check_in_time,
-          log.check_out_time || '',
+          // Exported in the club's own time so the spreadsheet matches the
+          // screen and the scanner, rather than shifting every row by whatever
+          // zone the machine running the export is set to.
+          formatTimestamp([log.check_in_time], timeZone),
+          log.check_out_time ? formatTimestamp([log.check_out_time], timeZone) : '',
           log.method,
           log.status,
         ]);

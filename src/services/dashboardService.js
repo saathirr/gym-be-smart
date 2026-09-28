@@ -1,30 +1,44 @@
 import { supabase } from '../lib/supabase';
 import { toMessage } from '../lib/supabaseErrors';
-import { startOfDay, startOfMonth, subDays, subMonths, addDays, format } from 'date-fns';
+import { getClubToday } from './attendanceService';
+import {
+  DEFAULT_CLUB_TIMEZONE,
+  addDays,
+  dayOfMonth,
+  getClubDayRangeIso,
+  getClubHour,
+  monthBounds,
+  parseKey,
+  toDateKey,
+  weekdayLabel,
+} from '../utils/attendanceMath';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function startOfToday() {
-  return startOfDay(new Date()).toISOString();
-}
-
-function toDateString(date) {
-  return format(date, 'yyyy-MM-dd');
-}
-
 export const dashboardService = {
-  async getDashboardSummary() {
+  async getDashboardSummary({ timeZone = DEFAULT_CLUB_TIMEZONE } = {}) {
     // Best-effort: without this the "active members" tile is stale until
     // somebody opens the Memberships screen.
     await supabase.rpc('sync_expired_memberships').then(null, () => {});
 
-    const today = startOfToday();
-    const weekAgo = subDays(new Date(), 6).toISOString();
-    const monthStart = startOfMonth(new Date()).toISOString();
-    const sixMonthsAgo = startOfMonth(subMonths(new Date(), 5)).toISOString();
-    // The card is labelled "within 7 days", so the list has to match that
-    // window instead of the whole month.
-    const expiringCutoff = toDateString(addDays(new Date(), 7));
+    const clubToday = await getClubToday({ timeZone });
+    const weekStartKey = addDays(clubToday, -6);
+    const expiringCutoffKey = addDays(clubToday, 7);
+
+    const bounds = monthBounds(clubToday);
+    const monthStart = bounds ? bounds.monthStart : `${clubToday.slice(0, 7)}-01`;
+
+    const todayParts = parseKey(clubToday);
+    let sixMonthsStart = monthStart;
+    if (todayParts) {
+      let y = todayParts.year;
+      let m = todayParts.month - 5;
+      if (m <= 0) {
+        m += 12;
+        y -= 1;
+      }
+      sixMonthsStart = `${y}-${String(m).padStart(2, '0')}-01`;
+    }
 
     const [
       activeMembers,
@@ -42,10 +56,7 @@ export const dashboardService = {
         .select('id', { count: 'exact', head: true })
         .eq('status', 'Active'),
 
-      supabase
-        .from('attendance')
-        .select('id', { count: 'exact', head: true })
-        .gte('check_in_time', today),
+      getTodayAttendanceQuery(clubToday, timeZone),
 
       supabase
         .from('payments')
@@ -58,23 +69,20 @@ export const dashboardService = {
         .select('amount')
         .eq('payment_status', 'Paid'),
 
-      supabase
-        .from('attendance')
-        .select('check_in_time')
-        .gte('check_in_time', weekAgo),
+      getWeeklyAttendanceQuery(weekStartKey, clubToday, timeZone),
 
       supabase
         .from('payments')
         .select('amount, transaction_date')
         .eq('payment_status', 'Paid')
-        .gte('transaction_date', sixMonthsAgo),
+        .gte('transaction_date', sixMonthsStart),
 
       supabase
         .from('memberships')
         .select('id', { count: 'exact', head: true })
         .in('status', ['Active', 'Expiring'])
-        .gte('end_date', toDateString(new Date()))
-        .lte('end_date', expiringCutoff),
+        .gte('end_date', clubToday)
+        .lte('end_date', expiringCutoffKey),
 
       supabase
         .from('memberships')
@@ -87,8 +95,8 @@ export const dashboardService = {
           `
         )
         .in('status', ['Active', 'Expiring'])
-        .gte('end_date', toDateString(new Date()))
-        .lte('end_date', expiringCutoff)
+        .gte('end_date', clubToday)
+        .lte('end_date', expiringCutoffKey)
         .order('end_date', { ascending: true })
         .limit(6),
 
@@ -128,8 +136,8 @@ export const dashboardService = {
       monthRevenue: sumAmounts(monthRevenue.data),
       totalRevenue: sumAmounts(totalRevenue.data),
       expiringCount: expiringCount.count ?? 0,
-      weeklyAttendance: buildWeeklyAttendance(weeklyRows.data || []),
-      monthlyRevenue: buildMonthlyRevenue(revenueRows.data || []),
+      weeklyAttendance: buildWeeklyAttendance(weeklyRows.data || [], clubToday, timeZone),
+      monthlyRevenue: buildMonthlyRevenue(revenueRows.data || [], clubToday),
       recentCheckIns: (recentCheckIns.data || []).map((row) => ({
         id: row.id,
         check_in_time: row.check_in_time,
@@ -149,20 +157,21 @@ export const dashboardService = {
   },
 
   // Head-count hour by hour, used by the Reports screen.
-  async getPeakHours(days = 7) {
-    const since = subDays(new Date(), days - 1).toISOString();
+  async getPeakHours(days = 7, { timeZone = DEFAULT_CLUB_TIMEZONE } = {}) {
+    const clubToday = await getClubToday({ timeZone });
+    const startDateKey = addDays(clubToday, -(days - 1));
 
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('check_in_time')
-      .gte('check_in_time', since);
-
+    const { data, error } = await getPeakHoursQuery(startDateKey, clubToday, timeZone);
     if (error) throw toMessage(error);
 
     const buckets = Array.from({ length: 24 }, () => 0);
     (data || []).forEach((row) => {
-      const hour = new Date(row.check_in_time).getHours();
-      buckets[hour] += 1;
+      if (row.check_in_time) {
+        const hour = getClubHour(row.check_in_time, timeZone);
+        if (hour !== null && hour >= 0 && hour < 24) {
+          buckets[hour] += 1;
+        }
+      }
     });
 
     return buckets.map((count, hour) => ({
@@ -172,38 +181,107 @@ export const dashboardService = {
   },
 };
 
+async function getTodayAttendanceQuery(clubToday, timeZone) {
+  const res = await supabase
+    .from('attendance')
+    .select('id', { count: 'exact', head: true })
+    .eq('attendance_date', clubToday);
+
+  if (res.error && res.error.code === '42703') {
+    const { startIso, endIso } = getClubDayRangeIso(clubToday, timeZone);
+    return supabase
+      .from('attendance')
+      .select('id', { count: 'exact', head: true })
+      .gte('check_in_time', startIso)
+      .lte('check_in_time', endIso);
+  }
+
+  return res;
+}
+
+async function getWeeklyAttendanceQuery(startDateKey, endDateKey, timeZone) {
+  const res = await supabase
+    .from('attendance')
+    .select('id, attendance_date, check_in_time')
+    .gte('attendance_date', startDateKey)
+    .lte('attendance_date', endDateKey);
+
+  if (res.error && res.error.code === '42703') {
+    const { startIso } = getClubDayRangeIso(startDateKey, timeZone);
+    const { endIso } = getClubDayRangeIso(endDateKey, timeZone);
+    return supabase
+      .from('attendance')
+      .select('id, check_in_time')
+      .gte('check_in_time', startIso)
+      .lte('check_in_time', endIso);
+  }
+
+  return res;
+}
+
+async function getPeakHoursQuery(startDateKey, endDateKey, timeZone) {
+  const res = await supabase
+    .from('attendance')
+    .select('check_in_time')
+    .gte('attendance_date', startDateKey)
+    .lte('attendance_date', endDateKey);
+
+  if (res.error && res.error.code === '42703') {
+    const { startIso } = getClubDayRangeIso(startDateKey, timeZone);
+    const { endIso } = getClubDayRangeIso(endDateKey, timeZone);
+    return supabase
+      .from('attendance')
+      .select('check_in_time')
+      .gte('check_in_time', startIso)
+      .lte('check_in_time', endIso);
+  }
+
+  return res;
+}
+
 function sumAmounts(rows) {
   return (rows || []).reduce((total, row) => total + (Number(row.amount) || 0), 0);
 }
 
-function buildWeeklyAttendance(rows) {
-  const counts = Array(7).fill(0);
-  const today = startOfDay(new Date());
+function buildWeeklyAttendance(rows, clubToday, timeZone = DEFAULT_CLUB_TIMEZONE) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    days.push(addDays(clubToday, -i));
+  }
+
+  const countsMap = {};
+  days.forEach((key) => {
+    countsMap[key] = 0;
+  });
 
   rows.forEach((row) => {
-    const date = startOfDay(new Date(row.check_in_time));
-    const diffDays = Math.round((today - date) / 86400000);
-    if (diffDays >= 0 && diffDays < 7) {
-      counts[6 - diffDays] += 1;
+    const key = row.attendance_date
+      ? toDateKey(row.attendance_date, timeZone)
+      : toDateKey(row.check_in_time, timeZone);
+
+    if (key && countsMap[key] !== undefined) {
+      countsMap[key] += 1;
     }
   });
 
-  // Label the actual dates in the window rather than assuming it starts on a
-  // Monday, which is only true when today happens to be a Sunday.
-  return counts.map((count, index) => ({
-    day: format(addDays(today, index - 6), 'EEE dd'),
-    count,
+  return days.map((key) => ({
+    day: `${weekdayLabel(key)} ${String(dayOfMonth(key)).padStart(2, '0')}`,
+    count: countsMap[key],
   }));
 }
 
-function buildMonthlyRevenue(rows) {
+function buildMonthlyRevenue(rows, clubToday) {
   const totals = new Array(12).fill(0);
-  const now = new Date();
-  const startIndex = (now.getMonth() - 5 + 12) % 12;
+  const parts = parseKey(clubToday);
+  const currentMonthZeroIndexed = parts ? parts.month - 1 : new Date().getMonth();
+  const startIndex = (currentMonthZeroIndexed - 5 + 12) % 12;
 
   rows.forEach((row) => {
-    const date = new Date(row.transaction_date);
-    const month = date.getMonth();
+    if (!row.transaction_date) return;
+    const dKey = toDateKey(row.transaction_date);
+    const dParts = parseKey(dKey);
+    if (!dParts) return;
+    const month = dParts.month - 1;
     const offset = (month - startIndex + 12) % 12;
     if (offset < 6) {
       totals[offset] += Number(row.amount) || 0;

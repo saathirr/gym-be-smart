@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { toMessage } from '../lib/supabaseErrors';
+import { DEFAULT_CLUB_TIMEZONE } from '../utils/attendanceMath';
 
 const DEFAULT_SETTINGS = {
   gym_name: 'Be Smart Fitness Club',
@@ -12,7 +13,13 @@ const DEFAULT_SETTINGS = {
   closing_time: '22:00',
   currency: 'LKR',
   invoice_footer: 'Thank you for training with us.',
+  // Read by the app so the browser and the database agree on which day it is.
+  // The database is the authority; this is the value it reports back.
+  timezone: DEFAULT_CLUB_TIMEZONE,
 };
+
+const SETTINGS_COLUMNS =
+  'gym_name, tagline, phone, support_email, address, district, opening_time, closing_time, currency, invoice_footer, timezone';
 
 export const settingsService = {
   DEFAULT_SETTINGS,
@@ -20,15 +27,18 @@ export const settingsService = {
   async getGymSettings() {
     const { data, error } = await supabase
       .from('gym_settings')
-      .select(
-        'gym_name, tagline, phone, support_email, address, district, opening_time, closing_time, currency, invoice_footer'
-      )
+      .select(SETTINGS_COLUMNS)
       .eq('id', true)
       .maybeSingle();
 
     if (error) throw toMessage(error, 'Could not load the club settings.');
 
-    return { ...DEFAULT_SETTINGS, ...(data || {}) };
+    // A null or unusable timezone would make every date calculation in the app
+    // fall back silently, so it is replaced rather than passed through.
+    const settings = { ...DEFAULT_SETTINGS, ...(data || {}) };
+    if (!settings.timezone) settings.timezone = DEFAULT_CLUB_TIMEZONE;
+
+    return settings;
   },
 
   async saveGymSettings(values) {

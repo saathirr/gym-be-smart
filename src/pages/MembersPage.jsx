@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Plus,
@@ -14,6 +14,8 @@ import {
   Pencil,
   AlertCircle,
   CheckCircle2,
+  UserRound,
+  TrendingUp,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -21,11 +23,20 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
+import { PhotoField } from '../components/members/PhotoField';
 import { memberService } from '../services/memberService';
+import { attendanceService, getClubToday } from '../services/attendanceService';
+import { storageService } from '../services/storageService';
 import { planService, pickDefaultPlan } from '../services/planService';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
+import { useMemberPhotoUrls } from '../hooks/useMemberPhotoUrls';
+import {
+  buildMemberMonthSummaries,
+  monthLabel,
+  parseKey,
+} from '../utils/attendanceMath';
 import { SRI_LANKAN_DISTRICTS } from '../utils/constants';
 import { toMessage } from '../lib/supabaseErrors';
 
@@ -66,13 +77,35 @@ export function MembersPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [passMember, setPassMember] = useState(null);
+  // True only for a pass opened straight after a registration, so the modal can
+  // confirm the pass was issued rather than re-showing an old one.
+  const [passJustIssued, setPassJustIssued] = useState(false);
+
+  // Current-month attendance for the rows on screen. Fetched separately from the
+  // member list so filtering the list does not also re-count the month.
+  const [monthAttendance, setMonthAttendance] = useState([]);
+  const [clubToday, setClubToday] = useState(null);
 
   const [formData, setFormData] = useState(blankForm);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // The picked photo is held as a File, not an upload, until the member row
+  // exists: the storage path is namespaced by member id, which is only known
+  // after the insert returns.
+  const [photoFile, setPhotoFile] = useState(null);
 
   const { isAdmin } = useAuth();
-  const { branches, currency } = useGym();
+  const { branches, currency, settings } = useGym();
+  const timeZone = settings?.timezone;
+  const navigate = useNavigate();
+
+  // One batched signing request for every visible row, rather than one request
+  // per member on every keystroke in the search box.
+  const { urls: photoUrls } = useMemberPhotoUrls(members.map((m) => m.avatar_url));
+
+  // Compared by value: the list re-renders on every keystroke, and a fresh
+  // array with the same contents must not re-count the month.
+  const memberIdsKey = useMemo(() => members.map((m) => m.id).join(','), [members]);
 
   const setSearch = useCallback(
     (value) => {
@@ -124,10 +157,69 @@ export function MembersPage() {
     loadData();
   }, [loadData]);
 
+  // The current month, for the per-row figure. The club's today comes from the
+  // database, so the number here is the same one the check-in engine writes and
+  // the same one the profile page counts against.
+  useEffect(() => {
+    const memberIds = memberIdsKey ? memberIdsKey.split(',') : [];
+    if (memberIds.length === 0) {
+      setMonthAttendance([]);
+      setClubToday(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const today = await getClubToday({ timeZone });
+        if (cancelled) return;
+        setClubToday(today);
+
+        const rows = await attendanceService.getMonthAttendance({
+          memberIds,
+          monthStart: `${today.slice(0, 7)}-01`,
+          timeZone,
+        });
+        if (!cancelled) setMonthAttendance(rows);
+      } catch {
+        // A missing month total is not worth an error banner over the whole
+        // directory: the rows still show, they just show a dash.
+        if (!cancelled) setMonthAttendance([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [memberIdsKey, timeZone]);
+
+  // The same counting rules the profile page uses, applied to every visible row
+  // at once. Distinct days, from the later of the 1st and the join date, up to
+  // the club's today - so a player who joined on the 20th is never shown as
+  // absent for the 19 days before they existed.
+  const monthSummaries = useMemo(() => {
+    if (!clubToday) return {};
+
+    return buildMemberMonthSummaries({
+      rows: monthAttendance,
+      members,
+      monthStart: `${clubToday.slice(0, 7)}-01`,
+      today: clubToday,
+      timeZone,
+    });
+  }, [members, monthAttendance, clubToday, timeZone]);
+
+  const monthCaption = useMemo(() => {
+    const parts = parseKey(clubToday);
+    return parts ? monthLabel(parts.year, parts.month) : null;
+  }, [clubToday]);
+
   const openAddModal = () => {
     setEditingMember(null);
     setFormData({ ...blankForm(), plan_id: pickDefaultPlan(plans)?.id || '' });
     setFormError('');
+    setPhotoFile(null);
     setIsAddModalOpen(true);
   };
 
@@ -150,6 +242,9 @@ export function MembersPage() {
       payment_method: 'Cash',
     });
     setFormError('');
+    // Cleared so a photo picked for a previous member is never attached to this
+    // one by accident.
+    setPhotoFile(null);
     setIsAddModalOpen(true);
   };
 
@@ -167,14 +262,45 @@ export function MembersPage() {
 
       if (editingMember) {
         await memberService.updateMember(editingMember.id, formData);
+
+        // The photo is replaced through the storage service rather than through
+        // updateMember, so the row is repointed at the new object only after the
+        // upload succeeds.
+        if (photoFile) {
+          await storageService.replaceMemberPhoto({
+            memberId: editingMember.id,
+            currentPath: editingMember.avatar_url,
+            file: photoFile,
+          });
+        }
       } else {
         if (!formData.nic_number.trim()) {
           setFormError('NIC number is required for new registrations.');
           return;
         }
-        await memberService.createMember(formData, formData.plan_id || null);
+        const created = await memberService.createMember(
+          formData,
+          formData.plan_id || null,
+          photoFile
+        );
+
+        // A photo failure must not read as a failed registration: the member is
+        // on file either way, so the photo is offered as a follow-up instead.
+        if (created?.photoError) {
+          setError(
+            `${created.full_name} was registered, but the photo was not saved: ${created.photoError}`
+          );
+        }
+
+        // The pass is issued with the member, so it is shown immediately rather
+        // than making staff find the new row and click the QR button. This is
+        // the only moment the member can be handed their code, and it is the
+        // moment they are standing at the desk.
+        setPassMember(created);
+        setPassJustIssued(true);
       }
 
+      setPhotoFile(null);
       setIsAddModalOpen(false);
       await loadData();
     } catch (err) {
@@ -293,6 +419,15 @@ export function MembersPage() {
                 <th className="py-3.5 px-4">Contact</th>
                 <th className="py-3.5 px-4">Plan</th>
                 <th className="py-3.5 px-4">Expires</th>
+                <th
+                  className="py-3.5 px-4"
+                  title={`Present and missed days so far in ${monthCaption || 'the current month'}. The day-by-day record is on the player profile.`}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    This month
+                  </span>
+                </th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
@@ -300,28 +435,48 @@ export function MembersPage() {
             <tbody className="divide-y divide-hairline text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">
+                  <td colSpan="8" className="text-center py-8 text-slate-400">
                     Loading members...
                   </td>
                 </tr>
               ) : members.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">
+                  <td colSpan="8" className="text-center py-8 text-slate-400">
                     {search
                       ? `No members match "${search}".`
                       : 'No members registered yet. Use "Add New Member" to register the first one.'}
                   </td>
                 </tr>
               ) : (
-                members.map((member) => (
+                members.map((member) => {
+                  const month = monthSummaries[member.id];
+
+                  return (
                   <tr key={member.id} className="hover:bg-gym-800/40 transition">
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm">
-                          {member.full_name?.charAt(0) || 'M'}
+                        <div className="w-9 h-9 rounded-lg bg-gym-800 flex items-center justify-center font-bold text-brand-cyan text-sm shrink-0 overflow-hidden">
+                          {member.avatar_url && photoUrls[member.avatar_url] ? (
+                            <img
+                              src={photoUrls[member.avatar_url]}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            member.full_name?.charAt(0) || 'M'
+                          )}
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-100">{member.full_name}</p>
+                          {/* The name is the way into the profile, so the whole
+                              row reads as clickable rather than only the small
+                              icon in the actions column. */}
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/members/${member.id}`)}
+                            className="font-semibold text-slate-100 hover:text-brand-gold text-left transition"
+                          >
+                            {member.full_name}
+                          </button>
                           <p className="text-[11px] text-slate-400">
                             {member.gender || 'N/A'}
                             {member.district ? ` • ${member.district}` : ''}
@@ -349,6 +504,28 @@ export function MembersPage() {
                     <td className="py-3.5 px-4 text-slate-400">
                       {member.expiration_date ? formatDate(member.expiration_date) : 'N/A'}
                     </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      {month ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 text-[11px]"
+                          title={
+                            month.applicableDays
+                              ? `${month.presentDays} present, ${month.leaveDays} missed of ${month.applicableDays} days counted (${month.startDate} to ${month.endDate}). Open the profile for the day-by-day record.`
+                              : 'Nothing to count yet this month.'
+                          }
+                        >
+                          <span className="text-emerald-300 font-semibold">
+                            {month.presentDays}P
+                          </span>
+                          <span className="text-slate-600">/</span>
+                          <span className="text-rose-300/80">
+                            {month.leaveDays}L
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">-</span>
+                      )}
+                    </td>
                     <td className="py-3.5 px-4">
                       <Badge
                         variant={
@@ -364,8 +541,18 @@ export function MembersPage() {
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <button
-                        onClick={() => setPassMember(member)}
-                        className="p-1.5 rounded-lg bg-gym-800 hover:bg-brand-cyan hover:text-white text-slate-300 transition"
+                        onClick={() => navigate(`/members/${member.id}`)}
+                        className="p-1.5 rounded-lg bg-gym-800 hover:bg-brand-gold hover:text-gym-950 text-slate-300 transition"
+                        title="Open player profile"
+                      >
+                        <UserRound className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPassJustIssued(false);
+                          setPassMember(member);
+                        }}
+                        className="p-1.5 ml-1 rounded-lg bg-gym-800 hover:bg-brand-cyan hover:text-white text-slate-300 transition"
                         title="View QR pass"
                       >
                         <QrCode className="w-4 h-4" />
@@ -399,7 +586,8 @@ export function MembersPage() {
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -420,6 +608,13 @@ export function MembersPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <PhotoField
+            file={photoFile}
+            existingPath={editingMember?.avatar_url}
+            existingName={editingMember?.full_name}
+            onPick={setPhotoFile}
+          />
+
           <Input
             label="Full name *"
             placeholder="e.g. Kasun Kalhara Perera"
@@ -612,11 +807,21 @@ export function MembersPage() {
 
       <Modal
         isOpen={Boolean(passMember)}
-        onClose={() => setPassMember(null)}
-        title="Member QR pass"
+        onClose={() => {
+          setPassMember(null);
+          setPassJustIssued(false);
+        }}
+        title={passJustIssued ? 'Pass issued' : 'Member QR pass'}
       >
         {passMember && (
           <div className="flex flex-col items-center justify-center text-center space-y-4 py-2">
+            {passJustIssued && (
+              <p className="text-xs text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {passMember.full_name} is registered. This is their unique pass.
+              </p>
+            )}
+
             <div className="p-6 rounded-2xl bg-white shadow-2xl border-4 border-brand-cyan">
               <QRCodeSVG
                 value={passMember.qr_code_id || passMember.member_code}
@@ -663,9 +868,21 @@ export function MembersPage() {
               </div>
             </div>
 
-            <div className="w-full pt-4 border-t flex justify-center">
-              <Button variant="secondary" icon={Download} onClick={() => window.print()}>
+            <div className="w-full pt-4 border-t flex flex-col sm:flex-row items-center justify-center gap-2">
+              <Button variant="primary" icon={Download} onClick={() => window.print()}>
                 Print pass
+              </Button>
+              <Button
+                variant="secondary"
+                icon={UserRound}
+                onClick={() => {
+                  const id = passMember.id;
+                  setPassMember(null);
+                  setPassJustIssued(false);
+                  navigate(`/members/${id}`);
+                }}
+              >
+                Open player profile
               </Button>
             </div>
           </div>

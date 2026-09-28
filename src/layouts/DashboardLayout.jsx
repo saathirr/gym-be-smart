@@ -239,7 +239,10 @@ export function DashboardLayout() {
               <Clock className="w-4 h-4 text-brand-cyan shrink-0" />
               <div className="text-right leading-tight">
                 <span className="font-bold text-slate-100 block">
-                  {currentTime.toLocaleTimeString('en-LK', { hour12: true })}
+                  {currentTime.toLocaleTimeString('en-LK', {
+                    hour12: true,
+                    timeZone: settings?.timezone,
+                  })}
                 </span>
                 <span className="text-[9px] text-slate-400 block font-sans">
                   {formatDate(currentTime, 'EEE, MMM dd')}

@@ -18,6 +18,7 @@ import { Modal } from '../components/ui/Modal';
 import { attendanceService } from '../services/attendanceService';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
+import { useGym } from '../hooks/useGym';
 import { toMessage } from '../lib/supabaseErrors';
 
 const DATE_RANGES = [
@@ -38,7 +39,12 @@ export function AttendancePage() {
   const [submitting, setSubmitting] = useState(false);
 
   const { isAdmin } = useAuth();
+  const { settings } = useGym();
   const navigate = useNavigate();
+  // "Today" here means the club's today. On a machine set to another timezone
+  // the browser's midnight is the wrong boundary, and the log would disagree
+  // with the scanner and the dashboard about who is in the building.
+  const timeZone = settings?.timezone;
 
   const loadLogs = useCallback(async () => {
     try {
@@ -46,8 +52,8 @@ export function AttendancePage() {
       setError('');
 
       const [logRows, count] = await Promise.all([
-        attendanceService.getAttendanceLogs({ search, date: dateRange }),
-        attendanceService.getTodayCount(),
+        attendanceService.getAttendanceLogs({ search, date: dateRange, timeZone }),
+        attendanceService.getTodayCount({ timeZone }),
       ]);
 
       setLogs(logRows);
@@ -58,7 +64,7 @@ export function AttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, [search, dateRange]);
+  }, [search, dateRange, timeZone]);
 
   useEffect(() => {
     const timer = setTimeout(loadLogs, search ? 300 : 0);

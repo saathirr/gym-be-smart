@@ -10,6 +10,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { SetupPage } from '../pages/SetupPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { MembersPage } from '../pages/MembersPage';
+import { PlayerProfilePage } from '../pages/PlayerProfilePage';
 import { AttendancePage } from '../pages/AttendancePage';
 import { QRScannerPage } from '../pages/QRScannerPage';
 import { MembershipsPage } from '../pages/MembershipsPage';
@@ -81,6 +82,8 @@ export function AppRoutes() {
       >
         <Route path="/" element={<DashboardPage />} />
         <Route path="/members" element={<MembersPage />} />
+        {/* Declared after /members so the more specific path wins. */}
+        <Route path="/members/:id" element={<PlayerProfilePage />} />
         <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/qr-scanner" element={<QRScannerPage />} />
         <Route path="/memberships" element={<MembershipsPage />} />

@@ -55,22 +55,26 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { currency } = useGym();
+  const { currency, settings } = useGym();
   const { user } = useAuth();
   const { isDark } = useTheme();
   const chart = chartTheme(isDark);
+  // The club's own timezone, from gym_settings. Every day figure on this page is
+  // counted in it rather than in the browser's, so the tiles match the
+  // attendance log and the scanner on any machine.
+  const timeZone = settings?.timezone;
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      setSummary(await dashboardService.getDashboardSummary());
+      setSummary(await dashboardService.getDashboardSummary({ timeZone }));
     } catch (err) {
       setError(toMessage(err, 'Could not load the dashboard.'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [timeZone]);
 
   useEffect(() => {
     loadData();

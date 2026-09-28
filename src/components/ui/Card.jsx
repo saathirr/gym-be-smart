@@ -25,9 +25,26 @@ export function CardHeader({ children, className }) {
   );
 }
 
-export function CardTitle({ children, className }) {
+// `icon` is optional. When it is not passed, nothing is rendered before the
+// children, so every existing usage renders byte-for-byte as it did before.
+//
+// The base classes already had `flex items-center gap-2`, which is what an
+// icon needs; the prop was simply never accepted. It is rendered `aria-hidden`
+// because these are decorative: the heading text alone has to describe itself
+// to a screen reader, and an unlabelled SVG would only add noise.
+export function CardTitle({ children, icon: Icon, iconClassName, className, ...props }) {
   return (
-    <h3 className={cn('text-lg font-semibold text-slate-100 flex items-center gap-2', className)}>
+    <h3
+      className={cn('text-lg font-semibold text-slate-100 flex items-center gap-2', className)}
+      {...props}
+    >
+      {Icon ? (
+        <Icon
+          className={cn('w-5 h-5 shrink-0 text-brand-cyan', iconClassName)}
+          aria-hidden="true"
+          focusable="false"
+        />
+      ) : null}
       {children}
     </h3>
   );

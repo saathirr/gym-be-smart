@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import {
   QrCode,
@@ -14,7 +15,11 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
+import { Avatar } from '../components/members/MemberPhoto';
 import { attendanceService } from '../services/attendanceService';
+import { useGym } from '../hooks/useGym';
+import { useMemberPhotoUrls } from '../hooks/useMemberPhotoUrls';
+import { firstCheckInLabel, formatTimestamp } from '../utils/attendanceMath';
 import { toMessage } from '../lib/supabaseErrors';
 
 export function QRScannerPage() {
@@ -25,6 +30,10 @@ export function QRScannerPage() {
 
   const scannerRef = useRef(null);
   const busyRef = useRef(false);
+
+  const navigate = useNavigate();
+  const { settings } = useGym();
+  const timeZone = settings?.timezone;
 
   const handleScanPayload = useCallback(async (decodedText) => {
     if (busyRef.current) return;
@@ -87,6 +96,24 @@ export function QRScannerPage() {
       setProcessing(false);
     }
   };
+
+  // On a repeat scan the service returns the original row for the day, so this
+  // time is the first check-in either way.
+  const resultCheckInTime = scanResult?.success
+    ? firstCheckInLabel(
+        scanResult.attendance?.check_in_time ? [scanResult.attendance.check_in_time] : [],
+        timeZone
+      )
+    : null;
+
+  // The photo on the result screen, so staff confirm the face and not just the
+  // name. Signed in one batched request by the same hook the members list uses;
+  // a member with no photo falls back to their initials, which is also what
+  // happens on the profile and the card.
+  const scannedPhotoPath = scanResult?.member?.avatar_url || null;
+  const { urls: scannedPhotoUrls } = useMemberPhotoUrls(
+    scannedPhotoPath ? [scannedPhotoPath] : []
+  );
 
   return (
     <div className="space-y-6">
@@ -168,7 +195,13 @@ export function QRScannerPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0 mt-1" />
-                Every scan is written to the attendance log with a timestamp
+                The first scan of the day is recorded against the club&rsquo;s local
+                date
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0 mt-1" />
+                Scanning again shows the original check-in time instead of adding a
+                second record
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0 mt-1" />
@@ -189,7 +222,9 @@ export function QRScannerPage() {
             <div
               className={`p-4 rounded-full inline-block ${
                 scanResult.success
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  ? scanResult.alreadyCheckedIn
+                    ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                   : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
               }`}
             >
@@ -201,8 +236,22 @@ export function QRScannerPage() {
             </div>
 
             <div>
+              {scanResult.member && (
+                <div className="flex justify-center mb-3">
+                  <Avatar
+                    src={scannedPhotoPath ? scannedPhotoUrls[scannedPhotoPath] : null}
+                    name={scanResult.member.full_name}
+                    size="lg"
+                  />
+                </div>
+              )}
+
               <h3 className="text-xl font-bold text-slate-100">
-                {scanResult.success ? 'Access granted' : 'Access denied'}
+                {scanResult.success
+                  ? scanResult.alreadyCheckedIn
+                    ? 'Already checked in'
+                    : 'Access granted'
+                  : 'Access denied'}
               </h3>
               {scanResult.member && (
                 <p className="text-sm font-semibold text-brand-cyan mt-1">
@@ -218,6 +267,42 @@ export function QRScannerPage() {
                     }`
                   : scanResult.error}
               </p>
+
+              {scanResult.success && (
+                <p className="text-xs text-slate-400 mt-2">
+                  {scanResult.alreadyCheckedIn ? (
+                    <>
+                      Already recorded today at{' '}
+                      <span className="text-slate-200 font-medium">
+                        {resultCheckInTime || 'an unrecorded time'}
+                      </span>
+                      . This scan did not add a second record.
+                    </>
+                  ) : (
+                    <>
+                      Checked in at{' '}
+                      <span className="text-slate-200 font-medium">
+                        {resultCheckInTime || 'now'}
+                      </span>{' '}
+                      •{' '}
+                      {formatTimestamp(scanResult.attendance?.check_in_time, timeZone)}
+                    </>
+                  )}
+                </p>
+              )}
+
+              {scanResult.member && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanResult(null);
+                    navigate(`/members/${scanResult.member.id}`);
+                  }}
+                  className="mt-3 text-xs text-brand-gold-strong hover:underline"
+                >
+                  Open player profile
+                </button>
+              )}
             </div>
 
             <Button
