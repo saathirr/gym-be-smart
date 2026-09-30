@@ -66,6 +66,7 @@ function DayCell({ day, isToday, isSelected, onSelect, timeZone }) {
 }
 
 function EmptyMessage({ summary }) {
+  if (!summary) return 'No attendance recorded in this month.';
   if (summary.notStarted) {
     return 'This month has not started yet, or you had not joined by then.';
   }
@@ -252,7 +253,7 @@ export function MemberAttendanceHistory({
           )}
 
           {summary.presentDays === 0 && (
-            <p className="text-xs text-slate-500">{EmptyMessage(summary)}</p>
+            <p className="text-xs text-slate-500"><EmptyMessage summary={summary} /></p>
           )}
 
           {months.length > 1 && (

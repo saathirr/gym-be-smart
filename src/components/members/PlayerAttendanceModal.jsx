@@ -20,25 +20,23 @@ export function PlayerAttendanceModal({
   const { settings } = useGym();
   const timeZone = settings?.timezone;
 
-  const [member, setMember] = useState(initialMember || null);
+  const [fetchedMember, setFetchedMember] = useState(null);
   const [attendanceRows, setAttendanceRows] = useState([]);
   const [today, setToday] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('calendar'); // 'calendar' | 'present_list'
 
-  const effectiveMemberId = initialMember?.id || memberId;
+  const activeMember = initialMember || fetchedMember;
+  const effectiveMemberId = activeMember?.id || memberId;
 
   const loadAttendance = useCallback(async () => {
     if (!effectiveMemberId || !isOpen) return;
 
     setLoading(true);
     try {
-      let memberDetails = initialMember;
-      if (!memberDetails) {
-        memberDetails = await memberService.getMemberProfile(effectiveMemberId);
-        setMember(memberDetails);
-      } else {
-        setMember(initialMember);
+      if (!initialMember) {
+        const details = await memberService.getMemberProfile(effectiveMemberId);
+        setFetchedMember(details);
       }
 
       const [rows, clubToday] = await Promise.all([
@@ -56,12 +54,15 @@ export function PlayerAttendanceModal({
   }, [effectiveMemberId, initialMember, isOpen, timeZone]);
 
   useEffect(() => {
-    loadAttendance();
-  }, [loadAttendance]);
+    if (isOpen) {
+      setActiveTab('calendar');
+      loadAttendance();
+    }
+  }, [isOpen, effectiveMemberId, loadAttendance]);
 
   const registrationDate = useMemo(
-    () => toDateKey(member?.created_at, timeZone),
-    [member?.created_at, timeZone]
+    () => toDateKey(activeMember?.created_at, timeZone),
+    [activeMember?.created_at, timeZone]
   );
 
   // Present records only (with check-in time)
@@ -75,26 +76,26 @@ export function PlayerAttendanceModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={member ? `${member.full_name}'s Attendance Calendar` : 'Player Attendance'}
+      title={activeMember ? `${activeMember.full_name}'s Attendance Calendar` : 'Player Attendance'}
       className="max-w-3xl"
     >
       <div className="space-y-4">
         {/* Header summary of member */}
-        {member && (
+        {activeMember && (
           <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gym-850/70 border border-hairline">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gym-800 border border-hairline flex items-center justify-center text-brand-gold font-bold text-base">
-                {member.full_name?.charAt(0) || 'P'}
+                {activeMember.full_name?.charAt(0) || 'P'}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-semibold text-slate-100">{member.full_name}</h4>
-                  <Badge variant={member.status === 'Active' ? 'emerald' : 'rose'}>
-                    {member.status || 'Active'}
+                  <h4 className="text-sm font-semibold text-slate-100">{activeMember.full_name}</h4>
+                  <Badge variant={activeMember.status === 'Active' ? 'emerald' : 'rose'}>
+                    {activeMember.status || 'Active'}
                   </Badge>
                 </div>
                 <p className="text-xs text-slate-400 font-mono">
-                  {member.member_code} {member.plan_name ? `• ${member.plan_name}` : ''}
+                  {activeMember.member_code} {activeMember.plan_name ? `• ${activeMember.plan_name}` : ''}
                 </p>
               </div>
             </div>
@@ -106,7 +107,7 @@ export function PlayerAttendanceModal({
                 className="text-xs gap-1.5 text-brand-cyan hover:text-brand-cyan/80"
                 onClick={() => {
                   onClose();
-                  navigate(`/members/${member.id}#attendance`);
+                  navigate(`/members/${activeMember.id}#attendance`);
                 }}
               >
                 <UserRound className="w-3.5 h-3.5" />
@@ -160,7 +161,7 @@ export function PlayerAttendanceModal({
         {activeTab === 'present_list' && (
           <div className="space-y-3">
             <p className="text-xs text-slate-400">
-              Complete list of dates and check-in times when {member?.full_name || 'this player'} was present in the gym.
+              Complete list of dates and check-in times when {activeMember?.full_name || 'this player'} was present in the gym.
             </p>
 
             {loading ? (
