@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   AlertCircle,
   LogOut,
+  CalendarDays,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -15,6 +16,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
+import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
 import { attendanceService } from '../services/attendanceService';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
@@ -37,6 +39,7 @@ export function AttendancePage() {
   const [manualCode, setManualCode] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [calendarMemberId, setCalendarMemberId] = useState(null);
 
   const { isAdmin } = useAuth();
   const { settings } = useGym();
@@ -201,7 +204,15 @@ export function AttendancePage() {
                 logs.map((log) => (
                   <tr key={log.id} className="hover:bg-gym-800/40 transition">
                     <td className="py-3.5 px-4 font-semibold text-slate-100">
-                      {log.member_name}
+                      <button
+                        type="button"
+                        onClick={() => log.member_id && setCalendarMemberId(log.member_id)}
+                        className="hover:text-brand-gold text-left transition flex items-center gap-1.5 cursor-pointer"
+                        title="View player attendance calendar"
+                      >
+                        <span>{log.member_name}</span>
+                        <CalendarDays className="w-3.5 h-3.5 text-brand-gold/70" />
+                      </button>
                     </td>
                     <td className="py-3.5 px-4 font-mono text-brand-cyan">{log.member_code}</td>
                     <td className="py-3.5 px-4 text-slate-300">{log.plan_name}</td>
@@ -228,7 +239,16 @@ export function AttendancePage() {
                         {log.status}
                       </Badge>
                     </td>
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      {log.member_id && (
+                        <button
+                          onClick={() => setCalendarMemberId(log.member_id)}
+                          className="p-1.5 mr-1 rounded-lg bg-gym-800 hover:bg-emerald-600 hover:text-white text-slate-300 transition"
+                          title="View Attendance Calendar"
+                        >
+                          <CalendarDays className="w-4 h-4" />
+                        </button>
+                      )}
                       {!log.check_out_time ? (
                         <button
                           onClick={() => handleCheckout(log)}
@@ -299,6 +319,12 @@ export function AttendancePage() {
           </div>
         </form>
       </Modal>
+
+      <PlayerAttendanceModal
+        memberId={calendarMemberId}
+        isOpen={Boolean(calendarMemberId)}
+        onClose={() => setCalendarMemberId(null)}
+      />
     </div>
   );
 }

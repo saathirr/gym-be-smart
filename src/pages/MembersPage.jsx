@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   UserRound,
   TrendingUp,
+  CalendarDays,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -24,6 +25,7 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { PhotoField } from '../components/members/PhotoField';
+import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
 import { memberService } from '../services/memberService';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { storageService } from '../services/storageService';
@@ -77,6 +79,7 @@ export function MembersPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [passMember, setPassMember] = useState(null);
+  const [calendarMember, setCalendarMember] = useState(null);
   // True only for a pass opened straight after a registration, so the modal can
   // confirm the pass was issued rather than re-showing an old one.
   const [passJustIssued, setPassJustIssued] = useState(false);
@@ -506,13 +509,11 @@ export function MembersPage() {
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {month ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 text-[11px]"
-                          title={
-                            month.applicableDays
-                              ? `${month.presentDays} present, ${month.leaveDays} missed of ${month.applicableDays} days counted (${month.startDate} to ${month.endDate}). Open the profile for the day-by-day record.`
-                              : 'Nothing to count yet this month.'
-                          }
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMember(member)}
+                          className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-gym-850 hover:bg-gym-800 border border-hairline/60 transition cursor-pointer"
+                          title="Click to view full attendance calendar"
                         >
                           <span className="text-emerald-300 font-semibold">
                             {month.presentDays}P
@@ -521,9 +522,17 @@ export function MembersPage() {
                           <span className="text-rose-300/80">
                             {month.leaveDays}L
                           </span>
-                        </span>
+                          <CalendarDays className="w-3 h-3 text-brand-gold ml-0.5 opacity-80" />
+                        </button>
                       ) : (
-                        <span className="text-slate-600">-</span>
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMember(member)}
+                          className="text-slate-500 hover:text-slate-300 text-[11px]"
+                          title="Click to view attendance calendar"
+                        >
+                          View calendar
+                        </button>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
@@ -546,6 +555,13 @@ export function MembersPage() {
                         title="Open player profile"
                       >
                         <UserRound className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setCalendarMember(member)}
+                        className="p-1.5 ml-1 rounded-lg bg-gym-800 hover:bg-emerald-600 hover:text-white text-slate-300 transition"
+                        title="View Attendance Calendar"
+                      >
+                        <CalendarDays className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => {
@@ -888,6 +904,12 @@ export function MembersPage() {
           </div>
         )}
       </Modal>
+
+      <PlayerAttendanceModal
+        member={calendarMember}
+        isOpen={Boolean(calendarMember)}
+        onClose={() => setCalendarMember(null)}
+      />
     </div>
   );
 }

@@ -27,7 +27,7 @@ import { cn } from '../../utils/cn';
 
 const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-function DayCell({ day, isToday, onSelect, timeZone }) {
+function DayCell({ day, isToday, isSelected, onSelect, timeZone }) {
   if (!day) {
     return <div className="aspect-square" />;
   }
@@ -48,16 +48,17 @@ function DayCell({ day, isToday, onSelect, timeZone }) {
           : 'Did not attend'
       }
       className={cn(
-        'aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors',
+        'aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-medium transition-all cursor-pointer relative',
         present
-          ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-          : 'bg-rose-500/10 text-rose-300/80 hover:bg-rose-500/20',
-        isToday && 'ring-2 ring-brand-gold'
+          ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30'
+          : 'bg-rose-500/10 text-rose-300/80 hover:bg-rose-500/20 border border-rose-500/10',
+        isToday && 'ring-2 ring-brand-gold',
+        isSelected && 'ring-2 ring-brand-cyan scale-105 shadow-md z-10 font-bold'
       )}
     >
       <span>{dayOfMonth(day.date)}</span>
       {present && checkIn && (
-        <span className="text-[9px] font-normal opacity-70 leading-none">{checkIn}</span>
+        <span className="text-[9px] font-normal opacity-80 leading-none font-mono">{checkIn}</span>
       )}
     </button>
   );
@@ -86,22 +87,24 @@ export function MemberAttendanceHistory({
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
 
-  // `today` is injected by the page, which has already asked the database for
-  // the club's date. The month list is derived from it, never from the browser
-  // clock, so the newest selectable month is the one the club is actually in.
-  const todayKey = toDateKey(today, timeZone);
+  // `today` is injected by the page. If it is null/undefined during load or offline,
+  // fallback to todayKey(timeZone) so the calendar always renders rather than showing a blank screen.
+  const effectiveTodayKey = toDateKey(today, timeZone) || todayKey(timeZone);
 
   const months = useMemo(() => {
-    if (!todayKey) return [];
-    // Registration month through this month. A player registered after today
-    // (a back-dated import) yields an empty list rather than a broken calendar.
-    return listMonths(
-      `${(registrationDate || todayKey).slice(0, 7)}-01`,
-      todayKey
-    );
-  }, [registrationDate, todayKey]);
+    if (!effectiveTodayKey) return [];
+    const regKey = toDateKey(registrationDate, timeZone);
+    const startKey = regKey && regKey <= effectiveTodayKey
+      ? `${regKey.slice(0, 7)}-01`
+      : `${effectiveTodayKey.slice(0, 7)}-01`;
+    const list = listMonths(startKey, effectiveTodayKey);
+    if (list.length > 0) return list;
+    const year = Number(effectiveTodayKey.slice(0, 4));
+    const month = Number(effectiveTodayKey.slice(5, 7));
+    return [{ year, month, key: effectiveTodayKey.slice(0, 7) }];
+  }, [registrationDate, effectiveTodayKey, timeZone]);
 
-  const activeMonth = selectedMonth || todayKey?.slice(0, 7) || null;
+  const activeMonth = selectedMonth || effectiveTodayKey?.slice(0, 7) || null;
 
   const summary = useMemo(() => {
     if (!activeMonth) return null;
@@ -109,10 +112,10 @@ export function MemberAttendanceHistory({
       attendanceRows,
       registrationDate,
       monthStart: `${activeMonth}-01`,
-      today: todayKey,
+      today: effectiveTodayKey,
       timeZone,
     });
-  }, [activeMonth, attendanceRows, registrationDate, todayKey, timeZone]);
+  }, [activeMonth, attendanceRows, registrationDate, effectiveTodayKey, timeZone]);
 
   // The grid is offset so the 1st lands under the right weekday. 2026-01-01 was
   // a Thursday, so the offset is computed rather than hard-coded per month.
@@ -223,7 +226,8 @@ export function MemberAttendanceHistory({
                 <DayCell
                   key={day.date}
                   day={day}
-                  isToday={day.date === todayKey}
+                  isToday={day.date === effectiveTodayKey}
+                  isSelected={selectedDay?.date === day.date}
                   onSelect={setSelectedDay}
                   timeZone={timeZone}
                 />
