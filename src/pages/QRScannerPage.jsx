@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import {
   QrCode,
   Camera,
@@ -9,8 +9,10 @@ import {
   AlertTriangle,
   RefreshCw,
   KeyRound,
+  ImagePlus,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
+import { CameraStatusOverlay } from '../components/common/CameraStatusOverlay';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -20,28 +22,46 @@ import { attendanceService } from '../services/attendanceService';
 import { useGym } from '../hooks/useGym';
 import { useMemberPhotoUrls } from '../hooks/useMemberPhotoUrls';
 import { firstCheckInLabel, formatTimestamp } from '../utils/attendanceMath';
+import {
+  cameraOptionLabel,
+  describeCameraError,
+  detectCameraBlocker,
+  pickPreferredCameraId,
+} from '../utils/cameraSupport';
 import { toMessage } from '../lib/supabaseErrors';
+
+const READER_ID = 'qr-reader';
+const CAMERA_FPS = 20;
 
 export function QRScannerPage() {
   const [manualCode, setManualCode] = useState('');
   const [scanResult, setScanResult] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [cameraOn, setCameraOn] = useState(true);
+  // idle -> starting -> running, or error when the browser refused a camera.
+  const [cameraStatus, setCameraStatus] = useState('idle');
+  const [cameraIssue, setCameraIssue] = useState(null);
+  const [photoIssue, setPhotoIssue] = useState(null);
+  const [decodingPhoto, setDecodingPhoto] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [cameraId, setCameraId] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   const scannerRef = useRef(null);
   const busyRef = useRef(false);
+  const photoInputRef = useRef(null);
 
   const navigate = useNavigate();
   const { settings } = useGym();
   const timeZone = settings?.timezone;
 
-  const handleScanPayload = useCallback(async (decodedText) => {
+  const submitPayload = useCallback(async (payload, method) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setProcessing(true);
 
     try {
-      setScanResult(await attendanceService.logCheckIn(decodedText, 'QR_SCAN'));
+      setScanResult(await attendanceService.logCheckIn(payload, method));
     } catch (err) {
       setScanResult({ success: false, error: toMessage(err, 'Check-in failed.') });
     } finally {
@@ -53,48 +73,156 @@ export function QRScannerPage() {
   }, []);
 
   useEffect(() => {
-    let scanner = null;
-
-    if (cameraOn) {
-      scanner = new Html5QrcodeScanner(
-        'qr-reader',
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      );
-
-      scanner.render(
-        (decodedText) => {
-          handleScanPayload(decodedText);
-        },
-        () => {}
-      );
-
-      scannerRef.current = scanner;
+    if (!cameraOn) {
+      setCameraStatus('idle');
+      setCameraIssue(null);
+      return undefined;
     }
 
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(() => {});
-        scannerRef.current = null;
+    // Checked before touching the library so the phone gets the HTTPS reason
+    // rather than a bare NotAllowedError it cannot act on.
+    const blocker = detectCameraBlocker({
+      isSecureContext: window.isSecureContext !== false,
+      hasMediaDevices: Boolean(navigator.mediaDevices?.getUserMedia),
+    });
+
+    if (blocker) {
+      setCameras([]);
+      setCameraStatus('error');
+      setCameraIssue(blocker);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const scanner = new Html5Qrcode(READER_ID, {
+      verbose: false,
+      useBarCodeDetectorIfSupported: true,
+    });
+    scannerRef.current = scanner;
+
+    const stopScanner = () => {
+      const running = scannerRef.current;
+      scannerRef.current = null;
+      if (!running) return;
+      // stop() rejects when nothing is running, which happens when the start
+      // attempt failed or a photo scan already closed the camera.
+      running.stop().catch(() => {}).finally(() => {
+        try {
+          running.clear();
+        } catch {
+          // The element is already detached; nothing left to clear.
+        }
+      });
+    };
+
+    const start = async () => {
+      setCameraStatus('starting');
+      setCameraIssue(null);
+
+      try {
+        let target = cameraId;
+
+        if (!target) {
+          // Device labels stay hidden until the first permission grant, so an
+          // empty list here is normal and not a reason to give up: start() then
+          // falls back to a facingMode constraint and lets the browser choose.
+          const devices = await Html5Qrcode.getCameras().catch(() => []);
+          if (cancelled) return;
+          setCameras(devices);
+          target = pickPreferredCameraId(devices);
+        }
+
+        if (cancelled) {
+          stopScanner();
+          return;
+        }
+
+        await scanner.start(
+          target || { facingMode: { ideal: 'environment' } },
+          {
+            fps: CAMERA_FPS,
+            // Square, and a share of the smaller viewfinder side so the box
+            // still fits when a phone is held in portrait.
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const side = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.8);
+              return { width: side, height: side };
+            },
+            aspectRatio: 1,
+            disableFlip: true,
+          },
+          (decodedText) => {
+            submitPayload(decodedText, 'QR_SCAN');
+          },
+          () => {}
+        );
+
+        if (cancelled) {
+          stopScanner();
+          return;
+        }
+        setCameraStatus('running');
+      } catch (err) {
+        if (cancelled) return;
+        stopScanner();
+        setCameraStatus('error');
+        setCameraIssue(describeCameraError(err));
       }
     };
-  }, [cameraOn, handleScanPayload]);
+
+    start();
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [cameraOn, cameraId, attempt, submitPayload]);
+
+  // Camera pick-and-place fails on purpose, so picking a photo always works.
+  // This also stops the empty video box from sitting there pretending to scan.
+  const handlePhotoSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || decodingPhoto) return;
+
+    setDecodingPhoto(true);
+    setPhotoIssue(null);
+
+    const wasRunning = cameraStatus === 'running';
+    const running = scannerRef.current;
+    if (running) {
+      scannerRef.current = null;
+      await running.stop().catch(() => {});
+    }
+
+    const reader = new Html5Qrcode(READER_ID);
+    try {
+      const decodedText = await reader.scanFile(file, false);
+      await submitPayload(decodedText, 'QR_SCAN');
+      if (wasRunning) setAttempt((n) => n + 1);
+    } catch {
+      setPhotoIssue({
+        title: 'No member pass found in that photo',
+        detail: 'The photo was read, but no QR code was recognised in it.',
+        hint: 'Fill the frame with the code and keep the photo sharp. If the code is printed small on a card, take the photo closer.',
+      });
+      if (wasRunning) setAttempt((n) => n + 1);
+    } finally {
+      try {
+        reader.clear();
+      } catch {
+        // Nothing to clear.
+      }
+      setDecodingPhoto(false);
+    }
+  };
 
   const handleManualSubmit = async (e) => {
     e.preventDefault();
-    if (!manualCode.trim() || processing) return;
+    const code = manualCode.trim();
+    if (!code || processing) return;
 
-    setProcessing(true);
-    try {
-      setScanResult(
-        await attendanceService.logCheckIn(manualCode.trim(), 'MANUAL_ENTRY')
-      );
-      setManualCode('');
-    } catch (err) {
-      setScanResult({ success: false, error: toMessage(err, 'Check-in failed.') });
-    } finally {
-      setProcessing(false);
-    }
+    setManualCode('');
+    await submitPayload(code, 'MANUAL_ENTRY');
   };
 
   // On a repeat scan the service returns the original row for the day, so this
@@ -114,6 +242,11 @@ export function QRScannerPage() {
   const { urls: scannedPhotoUrls } = useMemberPhotoUrls(
     scannedPhotoPath ? [scannedPhotoPath] : []
   );
+
+  // Which camera the picker shows as current. Empty until the first successful
+  // start, at which point the browsers that hide labels still get a numbered
+  // entry to switch back to.
+  const activeCameraId = cameraId || pickPreferredCameraId(cameras) || cameras[0]?.id || '';
 
   return (
     <div className="space-y-6">
@@ -138,23 +271,94 @@ export function QRScannerPage() {
               <Camera className="w-5 h-5 text-brand-cyan" />
               <h3 className="text-sm font-semibold text-slate-100">Camera view</h3>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={RefreshCw}
-              onClick={() => setCameraOn((prev) => !prev)}
-            >
-              {cameraOn ? 'Restart' : 'Start'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {cameras.length > 1 && (
+                <select
+                  value={activeCameraId}
+                  onChange={(e) => setCameraId(e.target.value)}
+                  aria-label="Camera to scan with"
+                  className="rounded-lg bg-gym-850 text-xs text-slate-200 px-2 py-1.5 max-w-[220px] focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
+                >
+                  {cameras.map((device, index) => (
+                    <option key={device.id} value={device.id}>
+                      {cameraOptionLabel(device, index)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={RefreshCw}
+                onClick={() => setAttempt((n) => n + 1)}
+              >
+                Try again
+              </Button>
+            </div>
           </div>
 
-          <div className="w-full max-w-md mx-auto bg-gym-950 rounded-2xl p-4 min-h-[300px] flex items-center justify-center overflow-hidden">
+          <div className="relative w-full max-w-md mx-auto bg-gym-950 rounded-2xl p-4 min-h-[300px] flex items-center justify-center overflow-hidden">
             {cameraOn ? (
-              <div id="qr-reader" className="w-full text-slate-100" />
+              <>
+                {/* The library empties this element whenever it (re)starts, so
+                    every overlay is a sibling of it, never a child. */}
+                <div id={READER_ID} className="w-full text-slate-100" />
+
+                <CameraStatusOverlay
+                  status={cameraStatus}
+                  issue={cameraIssue}
+                  decodingPhoto={decodingPhoto}
+                  onRetry={() => setAttempt((n) => n + 1)}
+                  onScanPhoto={() => photoInputRef.current?.click()}
+                />
+              </>
             ) : (
               <div className="text-center py-12 text-slate-400">
                 <CameraOff className="w-12 h-12 mx-auto text-gym-700 mb-2" />
                 <p className="text-xs">Camera is stopped.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Camera}
+                  className="mt-3"
+                  onClick={() => setCameraOn(true)}
+                >
+                  Start camera
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="w-full max-w-md mx-auto">
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoSelected}
+              className="hidden"
+              aria-label="Scan a photo of a member pass"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ImagePlus}
+              className="w-full"
+              disabled={decodingPhoto}
+              onClick={() => photoInputRef.current?.click()}
+            >
+              {decodingPhoto ? 'Reading photo...' : 'Scan a photo of the pass'}
+            </Button>
+            <p className="text-[11px] text-slate-500 mt-2 text-center">
+              Opens the phone camera and reads the code as a picture. Works even where
+              the browser blocks live camera access.
+            </p>
+
+            {photoIssue && (
+              <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <p className="text-xs font-semibold text-amber-300">{photoIssue.title}</p>
+                <p className="text-xs text-slate-400 mt-1">{photoIssue.detail}</p>
+                <p className="text-xs text-slate-300 mt-1">{photoIssue.hint}</p>
               </div>
             )}
           </div>
