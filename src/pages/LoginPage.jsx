@@ -4,6 +4,7 @@ import { Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
 import { toMessage } from '../lib/supabaseErrors';
+import { flagAdminWelcome } from '../lib/authWelcome';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -29,7 +30,8 @@ export function LoginPage() {
     try {
       setError('');
       setLoading(true);
-      await login(email, password);
+      const { user } = await login(email, password);
+      if (user?.role === 'admin') flagAdminWelcome(user);
       navigate('/', { replace: true });
     } catch (err) {
       setError(toMessage(err, 'Could not sign in. Please try again.'));
@@ -41,7 +43,7 @@ export function LoginPage() {
   return (
     <Card className="glass-panel shadow-2xl p-8 space-y-6">
       <div>
-        <h3 className="text-xl font-bold text-slate-100 text-center">Staff sign in</h3>
+        <h3 className="text-xl font-bold text-slate-100 text-center">Admin sign in</h3>
         <p className="text-xs text-slate-400 text-center mt-1">
           {gymName} administration
         </p>

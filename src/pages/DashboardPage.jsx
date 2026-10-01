@@ -26,6 +26,7 @@ import {
   Bar,
 } from 'recharts';
 import { PageHeader } from '../components/common/PageHeader';
+import { AuthWelcomeBanner } from '../components/common/AuthWelcomeBanner';
 import { StatCard } from '../components/common/StatCard';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -85,6 +86,7 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <AuthWelcomeBanner />
       <PageHeader
         title={`Welcome back, ${user?.full_name?.split(' ')[0] || 'there'}`}
         description="Live club metrics from the attendance, membership, and payment records."

@@ -4,6 +4,7 @@ import { UserPlus, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { authService } from '../services/authService';
 import { toMessage } from '../lib/supabaseErrors';
+import { flagAdminWelcome } from '../lib/authWelcome';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -52,6 +53,7 @@ export function SetupPage() {
       // call is a safety net and also unlocks the rest of the app.
       await authService.promoteSelfToAdmin();
       await refreshUser();
+      flagAdminWelcome({ full_name: form.fullName.trim() || form.email.trim(), role: 'admin' });
       navigate('/', { replace: true });
     } catch (err) {
       setError(toMessage(err, 'Could not create the administrator account.'));
