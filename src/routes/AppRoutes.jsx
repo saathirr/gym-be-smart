@@ -17,7 +17,8 @@ import { MembershipsPage } from '../pages/MembershipsPage';
 import { PlansPage } from '../pages/PlansPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { ReportsPage } from '../pages/ReportsPage';
-import { SettingsPage } from '../pages/SettingsPage';
+import { ActivityLogsPage } from '../pages/ActivityLogsPage';
+import { AdminAccessPage } from '../pages/AdminAccessPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
 function FullPageLoader({ label = 'Loading your club...' }) {
@@ -91,6 +92,8 @@ export function AppRoutes() {
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/activity-logs" element={<ActivityLogsPage />} />
+        <Route path="/admin-access" element={<AdminAccessPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

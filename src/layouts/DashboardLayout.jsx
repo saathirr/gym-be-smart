@@ -19,6 +19,8 @@ import {
   Clock,
   Sun,
   Moon,
+  History,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
@@ -39,13 +41,18 @@ const navItems = [
   { name: 'Settings', path: '/settings', icon: Settings },
 ];
 
+const superAdminNavItems = [
+  { name: 'Activity Logs', path: '/activity-logs', icon: History },
+  { name: 'Admin Access', path: '/admin-access', icon: ShieldCheck },
+];
+
 export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [globalSearch, setGlobalSearch] = useState('');
 
-  const { user, logout } = useAuth();
+  const { user, logout, isSuperAdmin } = useAuth();
   const { gymName, settings, branches } = useGym();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -163,6 +170,45 @@ export function DashboardLayout() {
               </NavLink>
             );
           })}
+
+          {isSuperAdmin && (
+            <div className="pt-3 mt-3 border-t border-hairline/60 space-y-1">
+              <p className="px-3.5 text-[10px] font-extrabold uppercase tracking-wider text-brand-gold mb-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-brand-gold" />
+                Super Admin
+              </p>
+              {superAdminNavItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group',
+                        isActive
+                          ? 'bg-brand-gold text-gym-950 font-bold shadow-md shadow-amber-500/20'
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-gym-800/70'
+                      )
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <Icon
+                          className={cn(
+                            'w-5 h-5 shrink-0 transition-transform group-hover:scale-110',
+                            isActive ? 'text-gym-950' : 'text-slate-400 group-hover:text-brand-gold'
+                          )}
+                        />
+                        <span>{item.name}</span>
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
+          )}
 
           <button
             onClick={handleLogout}
