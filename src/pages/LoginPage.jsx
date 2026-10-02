@@ -60,7 +60,7 @@ export function LoginPage() {
         <Input
           label="Email address"
           type="email"
-          placeholder="admin@besmartfitness.lk"
+          placeholder="besmart@admin.lk"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           icon={Mail}

@@ -98,9 +98,9 @@ export function SetupPage() {
         />
 
         <Input
-          label="Admin email address"
+          label="Super Admin (Owner) email address"
           type="email"
-          placeholder="admin@besmartfitness.lk"
+          placeholder="besmart@admin.lk"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           required

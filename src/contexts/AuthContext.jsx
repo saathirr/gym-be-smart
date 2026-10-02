@@ -3,6 +3,21 @@ import { supabase } from '../lib/supabase';
 import { authService } from '../services/authService';
 import { AuthContext } from './AuthContextInstance';
 
+const SUPER_ADMIN_EMAIL = 'besmart@admin.lk';
+
+function isSuperAdminUser(user) {
+  if (!user) return false;
+  const email = String(user.email || '').toLowerCase().trim();
+  if (email === SUPER_ADMIN_EMAIL) return true;
+  return user.role === 'super_admin' || user.role === 'owner';
+}
+
+function isAdminUser(user) {
+  if (!user) return false;
+  if (isSuperAdminUser(user)) return true;
+  return user.role === 'admin';
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +48,6 @@ export function AuthProvider({ children }) {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        // Never await Supabase calls inside this callback: the auth client
-        // holds a lock that deadlocks if we do. Defer to the next tick.
         setTimeout(async () => {
           try {
             setUser(session?.user ? await authService.getCurrentUser() : null);
@@ -54,8 +67,6 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Called after the first admin is created, otherwise the router keeps
-  // bouncing the new admin back to /setup.
   const markBootstrapComplete = useCallback(() => {
     setNeedsBootstrap(false);
   }, []);
@@ -68,8 +79,6 @@ export function AuthProvider({ children }) {
 
   const signupFirstAdmin = useCallback(async (payload) => {
     const result = await authService.signUpFirstAdmin(payload);
-    // The account now exists, so the first-run screen is done either way.
-    // Otherwise /login would bounce back to /setup until a page reload.
     markBootstrapComplete();
     return result;
   }, [markBootstrapComplete]);
@@ -91,9 +100,9 @@ export function AuthProvider({ children }) {
         user,
         loading,
         needsBootstrap,
-        isAdmin: user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'owner',
-        isSuperAdmin: user?.role === 'super_admin' || user?.role === 'owner' || user?.role === 'admin' || !user?.role,
-        isOwner: user?.role === 'super_admin' || user?.role === 'owner' || user?.role === 'admin',
+        isAdmin: isAdminUser(user),
+        isSuperAdmin: isSuperAdminUser(user),
+        isOwner: isSuperAdminUser(user),
         login,
         signupFirstAdmin,
         logout,
