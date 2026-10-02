@@ -375,4 +375,44 @@ export const memberService = {
     if (error) throw toMessage(error);
     return true;
   },
+
+  async bulkImportMembers({ rows, planId = null, paymentMethod = 'Cash', onProgress }) {
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        await this.createMember(
+          {
+            full_name: row.full_name,
+            nic_number: row.nic_number || null,
+            phone: row.phone,
+            whatsapp_number: row.whatsapp_number || row.phone,
+            email: row.email || null,
+            district: row.district || 'Colombo',
+            address: row.address || null,
+            gender: row.gender || 'Male',
+            date_of_birth: row.date_of_birth || null,
+            emergency_contact: row.emergency_contact || null,
+            medical_conditions: row.medical_conditions || null,
+            payment_method: paymentMethod,
+          },
+          planId,
+          null
+        );
+        successCount++;
+      } catch (err) {
+        errorCount++;
+        errors.push({ row: row.rowId, name: row.full_name, error: err?.message || String(err) });
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, rows.length);
+      }
+    }
+
+    return { successCount, errorCount, errors };
+  },
 };

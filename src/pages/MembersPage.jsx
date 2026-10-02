@@ -17,6 +17,7 @@ import {
   UserRound,
   TrendingUp,
   CalendarDays,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -26,6 +27,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { PhotoField } from '../components/members/PhotoField';
 import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
+import { ImportMembersModal } from '../components/members/ImportMembersModal';
 import { memberService } from '../services/memberService';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { storageService } from '../services/storageService';
@@ -77,12 +79,24 @@ export function MembersPage() {
   const [branchFilter, setBranchFilter] = useState('ALL');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [passMember, setPassMember] = useState(null);
   const [calendarMember, setCalendarMember] = useState(null);
   // True only for a pass opened straight after a registration, so the modal can
   // confirm the pass was issued rather than re-showing an old one.
   const [passJustIssued, setPassJustIssued] = useState(false);
+
+  const handleBulkImport = async ({ rows, planId, paymentMethod, onProgress }) => {
+    const summary = await memberService.bulkImportMembers({
+      rows,
+      planId,
+      paymentMethod,
+      onProgress,
+    });
+    await loadData();
+    return summary;
+  };
 
   // Current-month attendance for the rows on screen. Fetched separately from the
   // member list so filtering the list does not also re-count the month.
@@ -346,9 +360,18 @@ export function MembersPage() {
         title="Members"
         description="Register members, issue QR passes, and manage subscription status."
       >
-        <Button variant="primary" icon={Plus} onClick={openAddModal}>
-          Add New Member
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            icon={FileSpreadsheet}
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            Import Members
+          </Button>
+          <Button variant="primary" icon={Plus} onClick={openAddModal}>
+            Add New Member
+          </Button>
+        </div>
       </PageHeader>
 
       {error && (
@@ -909,6 +932,14 @@ export function MembersPage() {
         member={calendarMember}
         isOpen={Boolean(calendarMember)}
         onClose={() => setCalendarMember(null)}
+      />
+
+      <ImportMembersModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        plans={plans}
+        currency={currency}
+        onImportComplete={handleBulkImport}
       />
     </div>
   );
