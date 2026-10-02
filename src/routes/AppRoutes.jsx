@@ -17,6 +17,7 @@ import { MembershipsPage } from '../pages/MembershipsPage';
 import { PlansPage } from '../pages/PlansPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { ReportsPage } from '../pages/ReportsPage';
+import { SettingsPage } from '../pages/SettingsPage';
 import { ActivityLogsPage } from '../pages/ActivityLogsPage';
 import { AdminAccessPage } from '../pages/AdminAccessPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
