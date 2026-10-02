@@ -25,21 +25,27 @@ function issue(code, title, detail, hint) {
  * camera that cannot be delivered. Returns null when the camera is worth trying.
  */
 export function detectCameraBlocker({ isSecureContext = true, hasMediaDevices = true } = {}) {
+  const isHttp =
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1';
+
+  if (isSecureContext === false || isHttp) {
+    return issue(
+      'insecure-context',
+      'Camera blocked: this page is not on HTTPS',
+      'Mobile phone browsers strictly block camera access over plain HTTP (e.g. http://192.168.1.5:3000). Camera access is only granted on HTTPS addresses or localhost.',
+      `Deploy to GitHub Pages (HTTPS) or open the app through an HTTPS tunnel for phone testing: run ${HTTPS_TUNNEL_COMMANDS.join(' or ')} on your PC, then open the https link on your phone.`
+    );
+  }
+
   if (hasMediaDevices === false) {
     return issue(
       'unsupported',
       'This browser cannot reach a camera',
       'The camera API is unavailable here. A very old browser, or a locked-down kiosk mode, can hide it.',
       'Open the scanner in the current Chrome, Edge, Safari or Firefox, and check that no policy is blocking the camera.'
-    );
-  }
-
-  if (isSecureContext === false) {
-    return issue(
-      'insecure-context',
-      'Camera blocked: this page is not on HTTPS',
-      'Phones only allow camera access on a secure (https) address. Opening the app by its local IP (for example http://192.168.1.5:3000) is plain HTTP, so the browser refuses the camera before it can even ask you. The desktop is unaffected because localhost counts as secure.',
-      `Open the same address through a temporary HTTPS tunnel instead: run ${HTTPS_TUNNEL_COMMANDS.join(' or ')} on the PC, then scan with the phone on the https address it prints.`
     );
   }
 
@@ -54,18 +60,27 @@ export function describeCameraError(error) {
   const name = error?.name || '';
   const message = String(error?.message || error || '');
 
-  // The one the phone throws over plain HTTP. Checked before the generic
-  // permission case because it has an entirely different fix.
-  if (/insecure context|not allowed by the user agent/i.test(message) && name !== 'NotAllowedError') {
+  const isHttp =
+    typeof window !== 'undefined' &&
+    window.location?.protocol === 'http:' &&
+    window.location?.hostname !== 'localhost' &&
+    window.location?.hostname !== '127.0.0.1';
+
+  const isInsecure =
+    isHttp ||
+    (typeof window !== 'undefined' && window.isSecureContext === false) ||
+    /insecure context/i.test(message);
+
+  if (isInsecure || (/not allowed by the user agent/i.test(message) && name !== 'NotAllowedError')) {
     return detectCameraBlocker({ isSecureContext: false });
   }
 
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
     return issue(
       'permission-denied',
-      'Camera permission was declined',
-      'The browser blocked camera access for this site, so no camera can be opened.',
-      'Tap the camera or lock icon beside the address, set Camera to Allow, then reload the page. On iPhone also check Settings > Privacy & Security > Camera.'
+      'Camera permission was declined or blocked',
+      'The browser or phone OS blocked camera access for this site.',
+      '1. If testing on phone over HTTP, open via HTTPS or GitHub Pages instead.\n2. Tap the lock/tune icon beside the web address in your mobile browser, set Camera to "Allow", and reload.\n3. On iPhone: check Settings > Privacy & Security > Camera > enable Safari/Chrome.'
     );
   }
 
