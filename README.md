@@ -59,7 +59,7 @@ A responsive Gym Management web application built with React, Vite, Tailwind CSS
 ```
 Gym/
 ├── .env.example
-├── .htaccess                  # Apache/XAMPP SPA fallback
+├── .htaccess                  # Apache/XAMPP SPA fallback (dev document root)
 ├── index.html
 ├── package.json
 ├── postcss.config.js
@@ -71,12 +71,14 @@ Gym/
 ├── vite.config.js
 ├── vitest.config.js           # test config, kept separate from the build
 ├── public/
+│   ├── .htaccess              # Apache / XAMPP SPA fallback
+│   ├── 404.html               # GitHub Pages: parks the deep link, boots the app
 │   ├── _redirects             # Netlify / Cloudflare Pages SPA fallback
 │   ├── favicon.ico
 │   └── favicon.svg
 └── src/
-    ├── main.jsx
-    ├── App.jsx                # config gate -> BrowserRouter -> providers
+    ├── main.jsx               # restores the parked deep link before React mounts
+    ├── App.jsx                # config gate -> BrowserRouter (basename) -> providers
     ├── index.css
     ├── components/
     │   ├── ui/                # Button, Card, Input, Badge, Modal
@@ -205,12 +207,13 @@ This is a single-page app using `BrowserRouter`, so the server must return `inde
 | Target | File |
 | --- | --- |
 | Vercel | `vercel.json` |
-| Apache / XAMPP | `.htaccess` |
+| Apache / XAMPP | `public/.htaccess` (copied into `dist/`) |
 | Netlify, Cloudflare Pages | `public/_redirects` |
+| GitHub Pages | `public/404.html` |
 
-Vite only copies `public/` into `dist/`. If you serve `dist/` as the Apache document root, copy `.htaccess` into `dist/` as well, and make sure `AllowOverride All` is set for that directory.
+Apache also needs `AllowOverride All` for the directory serving the app.
 
-Note: `index.html` and `assets/` use absolute paths (`/assets/...`), so the app must be served from the root of a domain. To host it under a sub-path, set `base` in `vite.config.js` to match.
+Note: `index.html` and `assets/` use absolute paths, and `BrowserRouter` is mounted with `basename={import.meta.env.BASE_URL}`, so `base` in `vite.config.js` is the single source of truth for the sub-path. Change it there when the app is not served from `/gym-be-smart/`, and change `BASE` in `public/404.html` to match. Without a matching `basename`, links work but a refresh lands on the `*` route, because the router sees the sub-path prefix as part of the page path.
 
 ## Current Status
 

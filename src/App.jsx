@@ -10,7 +10,7 @@ export function App() {
   return (
     <ThemeProvider>
       {isSupabaseConfigured ? (
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <AuthProvider>
             <GymProvider>
               <AppRoutes />

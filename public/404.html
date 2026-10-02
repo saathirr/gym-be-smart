@@ -1,27 +1,28 @@
 <!DOCTYPE html>
-<html lang="en" class="dark h-full">
+<html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Be Smart Fitness Club | Gym Management System</title>
     <script>
+      // GitHub Pages has no rewrite rules, so a refresh on a client-side route
+      // such as /gym-be-smart/members is answered with this file. Park the path
+      // the visitor asked for, then hand over to index.html; main.jsx puts it
+      // back into the address bar before React Router reads it.
       (function () {
+        var BASE = '/gym-be-smart/';
+        var location = window.location;
+        var path = location.pathname + location.search + location.hash;
         try {
-          var stored = localStorage.getItem('besmart.theme');
-          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
-          document.documentElement.classList.toggle('dark', theme === 'dark');
-          document.documentElement.style.colorScheme = theme;
-        } catch (error) {}
+          if (path !== BASE && path !== BASE.slice(0, -1)) {
+            sessionStorage.setItem('besmart.deeplink', path);
+          }
+        } catch (error) {
+          /* sessionStorage unavailable, the app still loads at the base path. */
+        }
+        location.replace(location.origin + BASE);
       })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
-  <body class="h-full bg-gym-950 text-slate-100 antialiased font-sans selection:bg-brand-cyan selection:text-white">
-    <div id="root" class="h-full"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <body></body>
 </html>
