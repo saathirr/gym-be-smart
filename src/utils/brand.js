@@ -5,7 +5,10 @@
 // inside a SQUARE box with object-contain. A non-square box would stretch it,
 // and the opaque background means it needs a deliberate frame on dark surfaces.
 
-export const LOGO_SRC = '/logo.jpg';
+const baseUrl = import.meta.env?.BASE_URL || '/';
+const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+export const LOGO_SRC = normalizedBase === '/' ? '/logo.jpg' : `${normalizedBase}logo.jpg`;
 
 export const LOGO_INTRINSIC_WIDTH = 640;
 export const LOGO_INTRINSIC_HEIGHT = 640;
