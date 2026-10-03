@@ -1,0 +1,51 @@
+# Netlify build configuration.
+#
+# This file is what pins the publish directory. Without it, Netlify falls back
+# to serving the repository root, which is the black screen described in the
+# deployment notes:
+#
+#   * the root index.html is the Vite SOURCE template, so it still points at
+#     /src/main.jsx instead of the compiled bundle
+#   * Netlify has no MIME mapping for .jsx, so that request comes back as
+#     application/octet-stream and the browser refuses it under strict module
+#     MIME checking, leaving an empty #root
+#   * /favicon.png 404s, because the real assets live in public/ and were never
+#     copied to the site root
+#   * refreshing /members or /settings 404s, because the SPA fallback lives in
+#     public/_redirects and never reached the published root
+#
+# Publishing dist/ instead fixes all four at once, because Vite rewrites the
+# script tag to /assets/index-<hash>.js, emits /assets/*.css, and copies
+# public/ (favicons, _redirects, 404.html) into the published output.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Matches the version used by .github/workflows/deploy.yml. Left undeclared,
+  # Netlify picks its own default Node version, so the two deployments could
+  # build the same commit on different runtimes. Pinning 20 keeps them aligned.
+  NODE_VERSION = "20"
+
+# React Router has no server, so every path is index.html. This is the same rule
+# as public/_redirects; Netlify merges them, so client routes survive a refresh
+# whichever form is read first.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Hashed asset filenames change on every build, so they can be cached forever.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    cache-control = "public, max-age=31536000, immutable"
+
+# index.html must never be cached, or a deploy would keep serving references to
+# asset hashes that no longer exist - which is the same empty page by another
+# route. Revalidate every time instead.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    cache-control = "public, max-age=0, must-revalidate"
