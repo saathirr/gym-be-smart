@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { toMessage } from '../lib/supabaseErrors';
 import { addDays } from 'date-fns';
 import { phoneSearchVariants } from '../utils/phone';
+import { canonicalPhoneKey } from '../utils/memberImport';
 import { storageService } from './storageService';
 
 const MEMBER_SELECT = `
@@ -241,7 +242,11 @@ export const memberService = {
           whatsapp_number: payload.whatsapp_number?.trim() || null,
           district: payload.district || null,
           address: payload.address?.trim() || null,
-          gender: payload.gender || 'Male',
+          // Not defaulted to a value. gender is nullable with a CHECK on the
+          // allowed words, so an import that genuinely left it blank should stay
+          // blank rather than assert something untrue about the member. The
+          // single-member form always submits one of the three allowed words.
+          gender: payload.gender?.trim() || null,
           date_of_birth: payload.date_of_birth || null,
           emergency_contact: payload.emergency_contact?.trim() || null,
           medical_conditions: payload.medical_conditions?.trim() || null,
@@ -381,8 +386,13 @@ export const memberService = {
     let errorCount = 0;
     const errors = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    // Only rows the validator accepted are written. A row that failed
+    // validation must never be inserted with a corrected-up value, so this is
+    // enforced here as well as in the modal.
+    const importable = rows.filter((row) => row.isValid !== false);
+
+    for (let i = 0; i < importable.length; i++) {
+      const row = importable[i];
       try {
         await this.createMember(
           {
@@ -391,9 +401,9 @@ export const memberService = {
             phone: row.phone,
             whatsapp_number: row.whatsapp_number || row.phone,
             email: row.email || null,
-            district: row.district || 'Colombo',
+            district: row.district || null,
             address: row.address || null,
-            gender: row.gender || 'Male',
+            gender: row.gender || null,
             date_of_birth: row.date_of_birth || null,
             emergency_contact: row.emergency_contact || null,
             medical_conditions: row.medical_conditions || null,
@@ -409,10 +419,38 @@ export const memberService = {
       }
 
       if (onProgress) {
-        onProgress(i + 1, rows.length);
+        onProgress(i + 1, importable.length);
       }
     }
 
     return { successCount, errorCount, errors };
+  },
+
+  // Canonical phone keys of every number already on file, used by the bulk
+  // import to reject a spreadsheet that would register existing members a
+  // second time.
+  //
+  // Both phone and WhatsApp are collected, because a member can be reachable on
+  // a number that only appears in one of the two columns, and an import row that
+  // collides with either one is still a duplicate member.
+  //
+  // Every registered number is fetched rather than filtering on the handful in
+  // the upload. The directory is a gym, not a call centre, so two columns with no
+  // joins is a small read, whereas an `in.(...)` list of every digit variant
+  // would grow a very long query URL for a large upload.
+  async getExistingPhoneKeys() {
+    const { data, error } = await supabase.from('members').select('phone, whatsapp_number');
+
+    if (error) throw toMessage(error, 'Could not check for existing members.');
+
+    const keys = new Set();
+    for (const member of data || []) {
+      const phoneKey = canonicalPhoneKey(member.phone);
+      if (phoneKey) keys.add(phoneKey);
+      const whatsappKey = canonicalPhoneKey(member.whatsapp_number);
+      if (whatsappKey) keys.add(whatsappKey);
+    }
+
+    return keys;
   },
 };

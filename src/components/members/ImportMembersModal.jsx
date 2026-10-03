@@ -7,15 +7,19 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
-  FileText,
   Loader2,
   Users,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
-import { SRI_LANKAN_DISTRICTS } from '../../utils/constants';
+import {
+  buildImportRows,
+  flagExistingDuplicates,
+  summarizeImportRows,
+  rejectedImportRows,
+} from '../../utils/memberImport';
+import { memberService } from '../../services/memberService';
 
 const SAMPLE_MEMBERS = [
   {
@@ -79,99 +83,43 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
     parseFile(selectedFile);
   };
 
-  const parseFile = (uploadFile) => {
+  const parseFile = async (uploadFile) => {
     setIsParsing(true);
     setError('');
     setImportSummary(null);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    try {
+      const buffer = await uploadFile.arrayBuffer();
+      // cellDates hands back real Date objects for date-formatted cells instead
+      // of raw serial numbers, so a date of birth survives the round trip.
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
-        if (rawJson.length === 0) {
-          setError('The uploaded spreadsheet contains no data rows.');
-          setParsedRows([]);
-          setIsParsing(false);
-          return;
-        }
-
-        const normalized = rawJson.map((row, idx) => {
-          const fullName = String(
-            row['Full Name'] || row['full_name'] || row['Name'] || row['name'] || ''
-          ).trim();
-          const nic = String(
-            row['NIC Number'] || row['nic_number'] || row['NIC'] || row['nic'] || ''
-          ).trim();
-          const phone = String(
-            row['Phone'] || row['phone'] || row['Mobile'] || row['mobile'] || ''
-          ).trim();
-          const whatsapp = String(
-            row['WhatsApp Number'] || row['whatsapp_number'] || row['WhatsApp'] || phone
-          ).trim();
-          const email = String(
-            row['Email'] || row['email'] || row['Email Address'] || ''
-          ).trim();
-          let district = String(row['District'] || row['district'] || 'Colombo').trim();
-          if (!SRI_LANKAN_DISTRICTS.includes(district)) {
-            district = 'Colombo';
-          }
-          const address = String(row['Address'] || row['address'] || '').trim();
-          let gender = String(row['Gender'] || row['gender'] || 'Male').trim();
-          if (!['Male', 'Female', 'Other'].includes(gender)) {
-            gender = 'Male';
-          }
-          const dob = String(
-            row['Date of Birth'] || row['date_of_birth'] || row['DOB'] || ''
-          ).trim();
-          const emergencyContact = String(
-            row['Emergency Contact'] || row['emergency_contact'] || ''
-          ).trim();
-          const medicalConditions = String(
-            row['Medical Conditions'] || row['medical_conditions'] || ''
-          ).trim();
-
-          const errors = [];
-          if (!fullName) errors.push('Missing Full Name');
-          if (!phone) errors.push('Missing Mobile Phone');
-
-          return {
-            rowId: idx + 1,
-            full_name: fullName,
-            nic_number: nic,
-            phone: phone,
-            whatsapp_number: whatsapp || phone,
-            email: email,
-            district: district,
-            address: address,
-            gender: gender,
-            date_of_birth: dob,
-            emergency_contact: emergencyContact,
-            medical_conditions: medicalConditions,
-            isValid: errors.length === 0,
-            errors,
-          };
-        });
-
-        setParsedRows(normalized);
-      } catch {
-        setError('Failed to parse the file. Please ensure it is a valid .xlsx, .xls or .csv file.');
+      if (rawJson.length === 0) {
+        setError('The uploaded spreadsheet contains no data rows.');
         setParsedRows([]);
-      } finally {
-        setIsParsing(false);
+        return;
       }
-    };
 
-    reader.onerror = () => {
-      setError('Could not read the uploaded file.');
+      // Field rules first, then repeats inside the file.
+      const normalized = buildImportRows(rawJson);
+
+      // Then the numbers already on file. members.phone has no unique
+      // constraint, so this check is the only thing stopping a re-imported
+      // sheet from creating a second member for every row.
+      const existingPhoneKeys = await memberService.getExistingPhoneKeys();
+      setParsedRows(flagExistingDuplicates(normalized, existingPhoneKeys));
+    } catch (err) {
+      setError(
+        err?.message ||
+          'Failed to read the file. Please ensure it is a valid .xlsx, .xls or .csv file.'
+      );
+      setParsedRows([]);
+    } finally {
       setIsParsing(false);
-    };
-
-    reader.readAsArrayBuffer(uploadFile);
+    }
   };
 
   const handleStartImport = async () => {
@@ -214,8 +162,14 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
     onClose();
   };
 
-  const validCount = parsedRows.filter((r) => r.isValid).length;
-  const invalidCount = parsedRows.filter((r) => !r.isValid).length;
+  // Duplicates are shown as their own count because they need a different fix in
+  // the spreadsheet than a bad district does, but they are also part of the
+  // invalid total: a duplicate is never inserted.
+  const counts = summarizeImportRows(parsedRows);
+  const rejected = rejectedImportRows(parsedRows);
+  const validCount = counts.valid;
+  const invalidCount = counts.invalid;
+  const duplicateCount = counts.duplicate;
 
   return (
     <Modal
@@ -234,6 +188,12 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
             </h4>
             <p className="text-xs text-slate-400">
               Export your Google Sheet or Excel file using our standard columns format.
+            </p>
+            <p className="text-[11px] text-slate-500">
+              District must be one of the 25 Sri Lankan districts and Gender must be Male, Female or
+              Other. Capitalisation and extra spaces do not matter. Leave either column blank to
+              leave it unset, but a value that is not recognised rejects the row instead of being
+              guessed.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -346,19 +306,49 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-brand-cyan" />
                 <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
-                  Spreadsheet Preview ({parsedRows.length} Rows)
+                  Spreadsheet Preview
                 </h4>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <Badge variant="emerald">{validCount} Valid</Badge>
-                {invalidCount > 0 && <Badge variant="rose">{invalidCount} Invalid</Badge>}
+            </div>
+
+            {/* The four counts, always all four, so the numbers can be checked
+                against each other before anything is written. */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-hairline bg-gym-850/40 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wider text-slate-400">Total Rows</p>
+                <p className="text-lg font-bold font-mono text-slate-100">{counts.total}</p>
+              </div>
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">
+                  Valid Rows
+                </p>
+                <p className="text-lg font-bold font-mono text-emerald-400">{counts.valid}</p>
+              </div>
+              <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wider text-rose-400/80">
+                  Invalid Rows
+                </p>
+                <p className="text-lg font-bold font-mono text-rose-400">{counts.invalid}</p>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wider text-amber-400/80">
+                  Duplicate Rows
+                </p>
+                <p className="text-lg font-bold font-mono text-amber-400">{counts.duplicate}</p>
               </div>
             </div>
+
+            {duplicateCount > 0 && duplicateCount < invalidCount && (
+              <p className="text-[11px] text-slate-400">
+                {duplicateCount} of the {invalidCount} invalid rows are duplicate phone numbers.
+              </p>
+            )}
 
             <div className="max-h-64 overflow-y-auto rounded-lg border border-hairline bg-gym-950">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-gym-900 border-b border-hairline text-slate-400 sticky top-0">
+                    <th className="p-2.5">Row</th>
                     <th className="p-2.5">Status</th>
                     <th className="p-2.5">Full Name</th>
                     <th className="p-2.5">NIC</th>
@@ -370,9 +360,10 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                 <tbody className="divide-y divide-hairline">
                   {parsedRows.map((row) => (
                     <tr
-                      key={row.rowId}
+                      key={row.excelRow}
                       className={row.isValid ? 'hover:bg-gym-900/50' : 'bg-rose-500/5'}
                     >
+                      <td className="p-2.5 font-mono text-slate-500">{row.excelRow}</td>
                       <td className="p-2.5">
                         {row.isValid ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -381,7 +372,7 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                             className="flex items-center gap-1 text-rose-400"
                             title={row.errors.join(', ')}
                           >
-                            <XCircle className="w-4 h-4" />
+                            <XCircle className="w-4 h-4 shrink-0" />
                             <span className="text-[10px]">{row.errors[0]}</span>
                           </div>
                         )}
@@ -389,13 +380,46 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                       <td className="p-2.5 font-medium text-slate-100">{row.full_name || '—'}</td>
                       <td className="p-2.5 text-slate-300 font-mono">{row.nic_number || '—'}</td>
                       <td className="p-2.5 text-slate-300">{row.phone || '—'}</td>
-                      <td className="p-2.5 text-slate-400">{row.district}</td>
-                      <td className="p-2.5 text-slate-400">{row.gender}</td>
+                      <td className="p-2.5 text-slate-400">{row.district || '—'}</td>
+                      <td className="p-2.5 text-slate-400">{row.gender || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {/* Every rejected row, with the spreadsheet row number and the exact
+                reason, so the file can be corrected without guessing. */}
+            {rejected.length > 0 && (
+              <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-rose-500/20">
+                  <AlertCircle className="w-4 h-4 text-rose-400" />
+                  <h5 className="text-xs font-semibold text-rose-300">
+                    Rows that will NOT be imported ({rejected.length})
+                  </h5>
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gym-900/60 border-b border-hairline text-slate-400">
+                        <th className="p-2.5 w-16">Row</th>
+                        <th className="p-2.5">Member Name</th>
+                        <th className="p-2.5">Problem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline">
+                      {rejected.map((row) => (
+                        <tr key={row.excelRow} className="hover:bg-gym-900/40">
+                          <td className="p-2.5 font-mono text-slate-400">{row.excelRow}</td>
+                          <td className="p-2.5 font-medium text-slate-200">{row.name}</td>
+                          <td className="p-2.5 text-rose-300">{row.reasons.join('; ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Import Progress Bar */}
             {isImporting && (
@@ -428,9 +452,17 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                 <span className="font-bold text-brand-cyan">{importSummary.successCount}</span>{' '}
                 members from your spreadsheet.
               </p>
+              {rejected.length > 0 && (
+                <p className="text-xs text-amber-400 mt-1">
+                  {rejected.length} row{rejected.length !== 1 ? 's were' : ' was'} skipped before
+                  importing because of the problems listed above.
+                </p>
+              )}
               {importSummary.errorCount > 0 && (
                 <p className="text-xs text-rose-400 mt-1">
-                  {importSummary.errorCount} rows failed due to duplicate phone or database constraints.
+                  {importSummary.errorCount} row
+                  {importSummary.errorCount !== 1 ? 's' : ''} could not be saved and need to be
+                  retried.
                 </p>
               )}
             </div>

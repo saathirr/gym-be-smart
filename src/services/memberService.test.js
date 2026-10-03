@@ -174,6 +174,65 @@ describe('getMemberProfile - history alongside the photo', () => {
   });
 });
 
+describe('getExistingPhoneKeys - bulk import duplicate guard', () => {
+  // members.phone is TEXT NOT NULL with no unique constraint, so the database
+  // will happily accept a second member holding a number that is already
+  // registered. The import has to do this check itself or a re-imported sheet
+  // silently doubles the directory.
+
+  it('collects the phone and WhatsApp numbers already on file', async () => {
+    listResult = {
+      data: [
+        { phone: '0771234567', whatsapp_number: '0771234567' },
+        { phone: '0719876543', whatsapp_number: '0719876543' },
+      ],
+      error: null,
+    };
+
+    const keys = await memberService.getExistingPhoneKeys();
+
+    expect(keys.has('771234567')).toBe(true);
+    expect(keys.has('719876543')).toBe(true);
+  });
+
+  it('canonicalises the international form so it matches a local 07... entry', async () => {
+    listResult = { data: [{ phone: '+94 77 123 4567', whatsapp_number: null }], error: null };
+
+    const keys = await memberService.getExistingPhoneKeys();
+
+    // The same person, stored the way WhatsApp gave the number to us.
+    expect(keys.has('771234567')).toBe(true);
+  });
+
+  it('catches a number held only in the WhatsApp column', async () => {
+    listResult = { data: [{ phone: null, whatsapp_number: '0771234567' }], error: null };
+
+    const keys = await memberService.getExistingPhoneKeys();
+
+    expect(keys.has('771234567')).toBe(true);
+  });
+
+  it('ignores rows with no usable number', async () => {
+    listResult = { data: [{ phone: null, whatsapp_number: null }], error: null };
+
+    expect((await memberService.getExistingPhoneKeys()).size).toBe(0);
+  });
+
+  it('returns an empty set when there are no members yet', async () => {
+    listResult = { data: [], error: null };
+
+    expect((await memberService.getExistingPhoneKeys()).size).toBe(0);
+  });
+
+  it('surfaces a failed lookup rather than reporting no duplicates', async () => {
+    // Returning an empty set on error would look exactly like "no member has
+    // this number", which is the one answer that must never be invented.
+    listResult = { data: null, error: { message: 'boom' } };
+
+    await expect(memberService.getExistingPhoneKeys()).rejects.toBeTruthy();
+  });
+});
+
 describe('getMembers - search', () => {
   // Staff hold three different forms of the same number: the international one
   // from a WhatsApp contact, the local 07... one from a printed card, and the
