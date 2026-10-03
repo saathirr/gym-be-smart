@@ -1,14 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   History,
-  ShieldCheck,
   Search,
   Filter,
   Download,
-  FileSpreadsheet,
-  UserCheck,
-  Clock,
-  CheckCircle2,
   RefreshCw,
   Eye,
   SlidersHorizontal,
@@ -54,6 +49,12 @@ export function ActivityLogsPage() {
 
   useEffect(() => {
     loadLogs();
+    // Deliberately keyed on category alone. loadLogs closes over search too,
+    // but filteredLogs below applies the search to the rows already fetched, so
+    // depending on it here would refetch the whole log on every keystroke to
+    // recompute a filter the page can already do locally. The manual refresh
+    // button re-reads whatever search is current at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category]);
 
   const filteredLogs = useMemo(() => {

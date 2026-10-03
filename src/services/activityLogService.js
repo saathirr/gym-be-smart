@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import { toMessage } from '../lib/supabaseErrors';
 
 const LOGS_STORAGE_KEY = 'besmart_activity_logs_v1';
 
