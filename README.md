@@ -66,6 +66,7 @@ Gym/
 ├── supabase_schema.sql        # full schema + RLS, run this first
 ├── supabase_migration_phase2_daypass_attendance.sql
 ├── supabase_migration_phase3_player_profiles.sql
+├── supabase_migration_phase4_activity_logs_and_roles.sql
 ├── tailwind.config.js
 ├── vercel.json                # Vercel SPA rewrites
 ├── vite.config.js
@@ -150,17 +151,20 @@ npm install
 
 ### 1. Create the database
 
-Run the SQL files in the Supabase SQL editor, in this order. All three are idempotent, so re-running one after an update is safe.
+Run the SQL files in the Supabase SQL editor, in this order. All four are idempotent, so re-running one after an update is safe.
 
 | Order | File | What it does |
 | --- | --- | --- |
 | 1 | `supabase_schema.sql` | Tables, sequences, helper functions and RLS policies. |
 | 2 | `supabase_migration_phase2_daypass_attendance.sql` | Club timezone, `attendance.attendance_date`, the reporting indexes, the one-check-in-per-day unique index, day-pass plans and the private `member-photos` bucket. |
 | 3 | `supabase_migration_phase3_player_profiles.sql` | The `log_attendance()` check-in engine and a re-assertion of the photo bucket and its policies. |
+| 4 | `supabase_migration_phase4_activity_logs_and_roles.sql` | The `activity_logs` audit trail behind the Activity Logs screen, and the `super_admin` role that Admin Access already offers. |
 
 `supabase_schema.sql` creates `profiles`, `gym_settings`, `branches`, `plans`, `members`, `memberships`, `attendance`, `payments`, the `current_role()` / `is_admin()` / `is_bootstrap_needed()` helper functions, the `next_member_code()` and `next_receipt_number()` sequences, and all RLS policies.
 
 Phase 3 refuses to run if the attendance table already holds two check-ins for the same member on the same club-local day, and prints the diagnostic query plus the admin-only `dedupe_attendance()` call to resolve them. That is deliberate: merging attendance history is the club's decision, not the migration's. See section 7 of that file.
+
+Phase 4 adds what the app reads but phases 1 to 3 never create: the `activity_logs` table behind the Activity Logs screen, and the `super_admin` role that Admin Access already offers in its dropdowns. Without it, that screen quietly shows five sample rows from `localStorage` and creating a staff account as "Super Admin (Owner)" fails with a check-violation error. Phase 4 also widens `is_admin()` and `bootstrap_admin()` to match, so an owner has the powers the UI gives them.
 
 The app does not require phase 3 to work. `attendanceService.recordCheckIn` falls back to a direct insert with a duplicate-key catch when `log_attendance()` is missing, so check-ins behave correctly before and after the migration is applied.
 
