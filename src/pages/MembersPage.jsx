@@ -18,6 +18,9 @@ import {
   TrendingUp,
   CalendarDays,
   FileSpreadsheet,
+  ArrowLeft,
+  MessageCircle,
+  Printer,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -42,6 +45,9 @@ import {
   parseKey,
 } from '../utils/attendanceMath';
 import { SRI_LANKAN_DISTRICTS } from '../utils/constants';
+import { buildWhatsAppMessage } from '../utils/gymCard';
+import { downloadQrPng, qrFileName } from '../utils/qrDownload';
+import { buildWhatsAppUrl, normalisePhone } from '../utils/phone';
 import { toMessage } from '../lib/supabaseErrors';
 
 const STATUSES = ['ALL', 'Active', 'Inactive', 'Suspended', 'Expired'];
@@ -105,6 +111,12 @@ export function MembersPage() {
 
   const [formData, setFormData] = useState(blankForm);
   const [formError, setFormError] = useState('');
+
+  // QR pass handoff. Separate from formError because this dialog outlives the
+  // form: a failed download must not clear the member's registration error, and
+  // the pass is opened for existing members too, not only for new signups.
+  const [qrBusy, setQrBusy] = useState(false);
+  const [qrError, setQrError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // The picked photo is held as a File, not an upload, until the member row
   // exists: the storage path is namespaced by member id, which is only known
@@ -326,6 +338,52 @@ export function MembersPage() {
       setSubmitting(false);
     }
   };
+
+  // The pass encodes only the opaque token, so that is what gets encoded again
+  // for the PNG. Both fall back the same way the on-screen code does, otherwise
+  // the downloaded file could be a QR that the scanner at the door rejects.
+  const passToken = (member) => member?.qr_code_id || member?.member_code || '';
+
+  const handleDownloadQr = async (member) => {
+    setQrBusy(true);
+    setQrError('');
+    try {
+      await downloadQrPng(passToken(member), qrFileName(member, { gymName: settings?.gym_name }));
+    } catch (err) {
+      setQrError(err.message || 'The QR code could not be downloaded.');
+    } finally {
+      setQrBusy(false);
+    }
+  };
+
+  const handleSendQrWhatsApp = (member) => {
+    const target = normalisePhone(member.whatsapp_number || member.phone);
+    const url = buildWhatsAppUrl(
+      target.raw,
+      `${buildWhatsAppMessage(member, { gymName: settings?.gym_name })}\n\nMember pass code: ${passToken(
+        member
+      )}`
+    );
+
+    if (!target.isValid || !url) {
+      setQrError(target.reason || 'That number cannot be used for WhatsApp.');
+      return;
+    }
+
+    setQrError('');
+    // Opened in a new tab so the app is not navigated away from if WhatsApp Web
+    // is unavailable on the desk machine.
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Closing the pass resets the QR handoff state so a failed download never shows
+  // up as an error against the next member whose pass is opened.
+  const closePass = useCallback(() => {
+    setPassMember(null);
+    setPassJustIssued(false);
+    setQrError('');
+    setQrBusy(false);
+  }, []);
 
   const handleToggleStatus = async (member) => {
     const next = member.status === 'Active' ? 'Inactive' : 'Active';
@@ -589,6 +647,7 @@ export function MembersPage() {
                       <button
                         onClick={() => {
                           setPassJustIssued(false);
+                          setQrError('');
                           setPassMember(member);
                         }}
                         className="p-1.5 ml-1 rounded-lg bg-gym-800 hover:bg-brand-cyan hover:text-white text-slate-300 transition"
@@ -637,16 +696,52 @@ export function MembersPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title={editingMember ? `Edit ${editingMember.full_name}` : 'Register new member'}
-        className="max-w-2xl"
-      >
-        {formError && (
-          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 mb-4 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
-            <span>{formError}</span>
-          </div>
-        )}
+        className="w-[min(640px,94vw)] max-w-none"
+        footer={
+          <div className="space-y-2">
+            {/* The error is shown here rather than at the top of the form. A
+                validation message that appears where the form begins is invisible
+                to whoever has scrolled down to the button they just clicked, and
+                this form is taller than any laptop viewport. */}
+            {formError && (
+              <div className="flex items-start gap-2 rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-xs text-rose-400">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+                <span>{formError}</span>
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="secondary"
+                onClick={() => setIsAddModalOpen(false)}
+                className="w-full sm:w-auto"
+              >
+                Cancel
+              </Button>
+              {/* This button sits in the dialog footer, which is outside the form
+                  element, so it is attached to the form by id rather than by
+                  nesting. Native constraint validation is unaffected: submitting
+                  this way runs the same validation on the same form, so a missing
+                  required field still blocks the save and focuses the input. */}
+              <Button
+                type="submit"
+                form="member-form"
+                variant="primary"
+                disabled={submitting}
+                className="w-full sm:w-auto"
+              >
+                {submitting
+                  ? 'Saving...'
+                  : editingMember
+                  ? 'Save changes'
+                  : 'Register and issue pass'}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {/* The form scrolls; the footer holding the primary action does not. */}
+        <form id="member-form" onSubmit={handleSubmit} className="space-y-4">
           <PhotoField
             file={photoFile}
             existingPath={editingMember?.avatar_url}
@@ -828,32 +923,51 @@ export function MembersPage() {
             value={formData.medical_conditions}
             onChange={(e) => setFormData({ ...formData, medical_conditions: e.target.value })}
           />
-
-          <div className="pt-3 border-t flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={submitting}>
-              {submitting
-                ? 'Saving...'
-                : editingMember
-                ? 'Save changes'
-                : 'Register and issue pass'}
-            </Button>
-          </div>
         </form>
       </Modal>
 
       <Modal
         isOpen={Boolean(passMember)}
-        onClose={() => {
-          setPassMember(null);
-          setPassJustIssued(false);
-        }}
+        onClose={closePass}
         title={passJustIssued ? 'Pass issued' : 'Member QR pass'}
+        footer={
+          passMember && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="primary"
+                  icon={Download}
+                  disabled={qrBusy}
+                  onClick={() => handleDownloadQr(passMember)}
+                  className="w-full sm:w-auto"
+                >
+                  {qrBusy ? 'Saving...' : 'Download QR'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon={MessageCircle}
+                  onClick={() => handleSendQrWhatsApp(passMember)}
+                  className="w-full sm:w-auto"
+                >
+                  Send on WhatsApp
+                </Button>
+              </div>
+
+              {/* A browser page cannot attach a file to a WhatsApp chat, so the
+                  image cannot ride along in the message. Saying so up front is the
+                  difference between a member receiving their pass and receiving an
+                  empty chat that looks like the gym sent nothing. */}
+              <p className="text-[11px] text-slate-500 leading-snug">
+                Download the QR, then attach it to the WhatsApp chat by hand.
+              </p>
+
+              {qrError && <p className="text-xs text-rose-400">{qrError}</p>}
+            </div>
+          )
+        }
       >
         {passMember && (
-          <div className="flex flex-col items-center justify-center text-center space-y-4 py-2">
+          <div className="flex flex-col items-center justify-center text-center space-y-4">
             {passJustIssued && (
               <p className="text-xs text-emerald-300 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -907,17 +1021,20 @@ export function MembersPage() {
               </div>
             </div>
 
-            <div className="w-full pt-4 border-t flex flex-col sm:flex-row items-center justify-center gap-2">
-              <Button variant="primary" icon={Download} onClick={() => window.print()}>
+            <div className="w-full flex flex-col sm:flex-row items-center justify-center gap-2">
+              <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={closePass}>
+                Back
+              </Button>
+              <Button variant="ghost" size="sm" icon={Printer} onClick={() => window.print()}>
                 Print pass
               </Button>
               <Button
-                variant="secondary"
+                variant="ghost"
+                size="sm"
                 icon={UserRound}
                 onClick={() => {
                   const id = passMember.id;
-                  setPassMember(null);
-                  setPassJustIssued(false);
+                  closePass();
                   navigate(`/members/${id}`);
                 }}
               >

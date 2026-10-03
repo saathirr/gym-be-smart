@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, Download, MessageCircle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, MessageCircle, ShieldAlert } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -19,7 +19,13 @@ import { cn } from '../../utils/cn';
 
 const CARD_ASPECT = '54 / 85.6';
 
-function CardFace({ card, photoUrl = null, qrSize = 120 }) {
+// className is applied last and goes through tailwind-merge, so a caller can
+// override max-w-sm with a narrower value without editing the card. The preview
+// does exactly that: at the natural 24rem the 54:85.6 ratio makes the card about
+// 609px tall, which does not fit a 768px laptop once the dialog header and footer
+// are accounted for, so the preview narrows it rather than letting the dialog
+// scroll a card the member has already seen.
+function CardFace({ card, photoUrl = null, qrSize = 120, className }) {
   const live = card.membershipStatus === 'Active' || card.membershipStatus === 'Expiring';
   const initials = String(card.fullName || 'Member')
     .trim()
@@ -30,7 +36,10 @@ function CardFace({ card, photoUrl = null, qrSize = 120 }) {
 
   return (
     <div
-      className="w-full max-w-sm rounded-2xl overflow-hidden bg-white text-gray-900 shadow-2xl"
+      className={cn(
+        'w-full max-w-sm rounded-2xl overflow-hidden bg-white text-gray-900 shadow-2xl',
+        className
+      )}
       style={{ aspectRatio: CARD_ASPECT }}
     >
       <div className="bg-emerald-600 px-4 py-2.5 flex items-center gap-2.5">
@@ -266,10 +275,50 @@ export function GymCardPanel({ member, gymName, className }) {
         </button>
       </div>
 
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Gym Membership Card">
+      <Modal
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        title="Gym Membership Card"
+        className="w-[min(430px,94vw)] max-w-none"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ArrowLeft}
+              onClick={() => setIsOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Back
+            </Button>
+
+            <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+              <Button
+                size="sm"
+                icon={Download}
+                disabled={busy}
+                onClick={handleDownload}
+                className="w-full sm:w-auto"
+              >
+                {busy ? 'Preparing...' : 'Download PDF'}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={MessageCircle}
+                disabled={!canShare}
+                onClick={handleWhatsApp}
+                className="w-full sm:w-auto"
+              >
+                Send on WhatsApp
+              </Button>
+            </div>
+          </div>
+        }
+      >
         <div className="space-y-4">
-          <div className="flex justify-center py-2">
-            <CardFace card={card} photoUrl={photoUrl} />
+          <div className="flex justify-center">
+            <CardFace card={card} photoUrl={photoUrl} qrSize={96} className="max-w-[310px]" />
           </div>
 
           <div className="text-xs text-slate-400 space-y-1">
@@ -282,20 +331,16 @@ export function GymCardPanel({ member, gymName, className }) {
             </p>
           </div>
 
-          <div className="flex gap-2">
-            <Button size="sm" icon={Download} disabled={busy} onClick={handleDownload}>
-              {busy ? 'Preparing...' : 'Download PDF'}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={MessageCircle}
-              disabled={!canShare}
-              onClick={handleWhatsApp}
-            >
-              Send on WhatsApp
-            </Button>
-          </div>
+          {/* The WhatsApp button is disabled without a usable number, and a
+              disabled button with no stated reason reads as a broken app. */}
+          {!canShare && (
+            <p className="text-xs text-amber-400 flex items-start gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>{whatsApp.reason || 'No WhatsApp number on file.'}</span>
+            </p>
+          )}
+
+          {error && <p className="text-xs text-rose-400">{error}</p>}
         </div>
       </Modal>
     </>
