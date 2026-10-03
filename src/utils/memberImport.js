@@ -53,13 +53,21 @@ function readCell(row, aliases) {
   for (const alias of aliases) {
     const value = row?.[alias];
     if (value === undefined || value === null) continue;
-    if (String(value).trim() !== '') return String(value);
+    // The raw value is returned rather than a string. A date-formatted cell
+    // arrives from XLSX as a Date, and String(date) is
+    // "Fri May 14 1995 00:00:00 GMT+0530 (...)", which no date parser and no
+    // Postgres DATE column will accept. Only the blank test stringifies.
+    if (String(value).trim() !== '') return value;
   }
   return '';
 }
 
+// The text columns all collapse to a trimmed string. Wrapping in String() keeps
+// a spreadsheet that stores a number in a text column (a phone number typed as
+// 771234567, say) from reaching createMember as a non-string and blowing up on
+// .trim().
 function readTrimmed(row, aliases) {
-  return readCell(row, aliases).trim();
+  return String(readCell(row, aliases) ?? '').trim();
 }
 
 /**
@@ -126,18 +134,63 @@ export function canonicalPhoneKey(input) {
  * Postgres rejects. The local date parts are read back rather than using
  * toISOString(), because a local midnight is a different UTC day in Sri Lanka
  * and toISOString() would shift the birthday by a day.
+ *
+ * Anything unreadable is rejected here rather than passed down. date_of_birth is
+ * a DATE column, so a spreadsheet serial number such as 34335 reaches Postgres
+ * as invalid syntax and fails the row with an error that names neither the cell
+ * nor the column; failing it in the preview instead puts the offending value in
+ * front of the person fixing the file.
+ *
+ * @returns {{ value: string | null, error: string | null }}
  */
 export function normalizeDateOfBirth(input) {
   if (input instanceof Date) {
-    if (Number.isNaN(input.getTime())) return null;
+    if (Number.isNaN(input.getTime())) {
+      return { value: null, error: 'Invalid date of birth: unreadable date' };
+    }
     const year = input.getFullYear();
     const month = String(input.getMonth() + 1).padStart(2, '0');
     const day = String(input.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return { value: `${year}-${month}-${day}`, error: null };
   }
 
   const value = String(input ?? '').trim();
-  return value || null;
+  if (!value) return { value: null, error: null };
+
+  // Already in the format the column wants.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (iso) {
+    return isRealDate(Number(iso[1]), Number(iso[2]), Number(iso[3]))
+      ? { value, error: null }
+      : { value: null, error: `Invalid date of birth: ${value}` };
+  }
+
+  // Day first, as written in Sri Lanka. Excel exports to a text date column in
+  // this form often enough that rejecting it would be unhelpful.
+  const sl = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(value);
+  if (sl) {
+    const day = Number(sl[1]);
+    const month = Number(sl[2]);
+    const year = Number(sl[3]);
+    if (isRealDate(year, month, day)) {
+      return {
+        value: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        error: null,
+      };
+    }
+  }
+
+  return { value: null, error: `Invalid date of birth: ${value}` };
+}
+
+// Guards against a well-shaped but impossible date such as 1995-02-31, which
+// Postgres would reject with 22007 just as firmly as it rejects nonsense.
+function isRealDate(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const probe = new Date(year, month - 1, day);
+  return (
+    probe.getFullYear() === year && probe.getMonth() === month - 1 && probe.getDate() === day
+  );
 }
 
 /**
@@ -155,12 +208,14 @@ export function normalizeMemberRow(row, excelRowNumber) {
   const phone = readTrimmed(row, COLUMN_ALIASES.phone);
   const district = normalizeDistrict(readCell(row, COLUMN_ALIASES.district));
   const gender = normalizeGender(readCell(row, COLUMN_ALIASES.gender));
+  const dateOfBirth = normalizeDateOfBirth(readCell(row, COLUMN_ALIASES.dateOfBirth));
 
   const errors = [];
   if (!fullName) errors.push('Missing Full Name');
   if (!phone) errors.push('Missing Mobile Phone');
   if (district.error) errors.push(district.error);
   if (gender.error) errors.push(gender.error);
+  if (dateOfBirth.error) errors.push(dateOfBirth.error);
 
   return {
     rowId: Math.max(0, excelRowNumber - 2),
@@ -174,7 +229,7 @@ export function normalizeMemberRow(row, excelRowNumber) {
     district: district.value,
     address: readTrimmed(row, COLUMN_ALIASES.address) || null,
     gender: gender.value,
-    date_of_birth: normalizeDateOfBirth(readCell(row, COLUMN_ALIASES.dateOfBirth)),
+    date_of_birth: dateOfBirth.value,
     emergency_contact: readTrimmed(row, COLUMN_ALIASES.emergencyContact) || null,
     medical_conditions: readTrimmed(row, COLUMN_ALIASES.medicalConditions) || null,
     phoneKey: phone ? canonicalPhoneKey(phone) : '',

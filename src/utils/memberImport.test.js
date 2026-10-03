@@ -390,26 +390,72 @@ describe('rejectedImportRows', () => {
 });
 
 describe('normalizeDateOfBirth', () => {
-  it('keeps an already formatted string', () => {
-    expect(normalizeDateOfBirth('1995-05-14')).toBe('1995-05-14');
+  it('keeps an already formatted date', () => {
+    expect(normalizeDateOfBirth('1995-05-14')).toEqual({ value: '1995-05-14', error: null });
   });
 
   it('converts a real date cell to YYYY-MM-DD', () => {
     // A date-formatted cell arrives as a Date, and String(date) would otherwise
     // become "Fri May 14 1995 ...", which Postgres rejects.
-    expect(normalizeDateOfBirth(new Date(1995, 4, 14))).toBe('1995-05-14');
+    expect(normalizeDateOfBirth(new Date(1995, 4, 14))).toEqual({
+      value: '1995-05-14',
+      error: null,
+    });
   });
 
   it('reads local date parts so the day does not shift by timezone', () => {
     // Sri Lanka is UTC+5:30, so a local midnight is the previous day in UTC and
     // toISOString() would report the wrong birthday.
-    expect(normalizeDateOfBirth(new Date(1995, 0, 1))).toBe('1995-01-01');
+    expect(normalizeDateOfBirth(new Date(1995, 0, 1)).value).toBe('1995-01-01');
+  });
+
+  it('accepts the day-first form written in Sri Lanka', () => {
+    expect(normalizeDateOfBirth('14/05/1995')).toEqual({ value: '1995-05-14', error: null });
+    expect(normalizeDateOfBirth('1/2/1995')).toEqual({ value: '1995-02-01', error: null });
+  });
+
+  it('rejects a spreadsheet serial number and shows the value', () => {
+    // Without cellDates a date-formatted cell reaches us as a number, and this
+    // is what used to reach Postgres as invalid date syntax and fail the row
+    // with an error that named neither the cell nor the column.
+    const result = normalizeDateOfBirth('34335');
+
+    expect(result.value).toBeNull();
+    expect(result.error).toBe('Invalid date of birth: 34335');
+  });
+
+  it('rejects an impossible but well-shaped date', () => {
+    expect(normalizeDateOfBirth('1995-02-31').error).toBe('Invalid date of birth: 1995-02-31');
+    expect(normalizeDateOfBirth('1995-13-01').error).toBe('Invalid date of birth: 1995-13-01');
+  });
+
+  it('rejects free text', () => {
+    expect(normalizeDateOfBirth('sometime in 1995').error).toBe(
+      'Invalid date of birth: sometime in 1995'
+    );
   });
 
   it('treats a blank value as no date of birth', () => {
-    expect(normalizeDateOfBirth('')).toBeNull();
-    expect(normalizeDateOfBirth(undefined)).toBeNull();
-    expect(normalizeDateOfBirth(new Date('nonsense'))).toBeNull();
+    expect(normalizeDateOfBirth('')).toEqual({ value: null, error: null });
+    expect(normalizeDateOfBirth(undefined)).toEqual({ value: null, error: null });
+    expect(normalizeDateOfBirth(new Date('nonsense')).error).toBe(
+      'Invalid date of birth: unreadable date'
+    );
+  });
+
+  it('rejects the whole row when the date cannot be read', () => {
+    const row = normalizeMemberRow(sheetRow({ 'Date of Birth': '34335' }), 2);
+
+    expect(row.isValid).toBe(false);
+    expect(row.date_of_birth).toBeNull();
+    expect(row.errors).toContain('Invalid date of birth: 34335');
+  });
+
+  it('accepts a blank date of birth as optional', () => {
+    const row = normalizeMemberRow(sheetRow({ 'Date of Birth': '' }), 2);
+
+    expect(row.isValid).toBe(true);
+    expect(row.date_of_birth).toBeNull();
   });
 });
 
@@ -427,5 +473,142 @@ describe('buildImportRows', () => {
       expect.arrayContaining(['Invalid district: Ampara District', 'Invalid gender: unknown'])
     );
     expect(rows[1]).toMatchObject({ district: null, gender: null, isValid: true });
+  });
+});
+// The original failure: a spreadsheet whose date column really is a date, read
+// without XLSX's cellDates option, turned "14/05/1995" into the number 34335 and
+// sent that to a DATE column. Every row carrying a birthday then failed
+// identically with 22007, and the message shown was a guess about duplicate
+// phone numbers. These tests pin the two halves of the fix: the parser now reads
+// real dates, and a serial number is refused in the preview instead of at the
+// database.
+describe('date-formatted cells', () => {
+  it('normalises a Date object cell to YYYY-MM-DD', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'Kasun Perera', Phone: '0771234567', 'Date of Birth': new Date(1995, 4, 14) },
+    ]);
+
+    // Not "Fri May 14 1995 00:00:00 GMT...", which is what String(date) yields
+    // and what Postgres rejects.
+    expect(row.date_of_birth).toBe('1995-05-14');
+    expect(row.isValid).toBe(true);
+  });
+
+  it('reads the local calendar day, not the UTC day', () => {
+    // A local midnight in Sri Lanka is the previous day in UTC, so toISOString()
+    // would silently shift the birthday.
+    const [row] = buildImportRows([
+      { 'Full Name': 'Edge Case', Phone: '0771234567', 'Date of Birth': new Date(2000, 0, 1) },
+    ]);
+
+    expect(row.date_of_birth).toBe('2000-01-01');
+  });
+
+  it('accepts a phone number stored as a number', () => {
+    const [row] = buildImportRows([{ 'Full Name': 'Numeric Phone', Phone: 771234567 }]);
+
+    expect(row.phone).toBe('771234567');
+    expect(row.isValid).toBe(true);
+  });
+
+  it('rejects every row of a sheet whose dates are serial numbers', () => {
+    // The reported symptom: twenty valid members, none imported.
+    const rows = Array.from({ length: 20 }, (_, i) => ({
+      'Full Name': `Test Member ${i + 1}`,
+      Phone: `0771000${String(i).padStart(3, '0')}`,
+      District: 'Colombo',
+      Gender: 'Male',
+      'Date of Birth': 34335,
+    }));
+
+    const built = buildImportRows(rows);
+
+    expect(built).toHaveLength(20);
+    expect(built.every((r) => r.isValid)).toBe(false);
+    expect(built.every((r) => r.errors.some((e) => e.startsWith('Invalid date of birth')))).toBe(
+      true
+    );
+    // Nothing is sent to the database, so nothing can fail there.
+    expect(built.filter((r) => r.isValid)).toHaveLength(0);
+  });
+
+  it('names the offending value so the row can be fixed', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'Serial DOB', Phone: '0771234567', 'Date of Birth': 34335 },
+    ]);
+
+    expect(row.errors).toContain('Invalid date of birth: 34335');
+  });
+
+  it('leaves a blank date of birth unset instead of inventing one', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'No DOB', Phone: '0771234567', 'Date of Birth': '' },
+    ]);
+
+    expect(row.date_of_birth).toBeNull();
+    expect(row.isValid).toBe(true);
+  });
+
+  it('accepts the day-first format Sri Lankan sheets are written in', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'Day First', Phone: '0771234567', 'Date of Birth': '14/05/1995' },
+    ]);
+
+    expect(row.date_of_birth).toBe('1995-05-14');
+    expect(row.isValid).toBe(true);
+  });
+
+  it('rejects an impossible but well-shaped date', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'Impossible', Phone: '0771234567', 'Date of Birth': '1995-02-31' },
+    ]);
+
+    expect(row.isValid).toBe(false);
+    expect(row.errors).toContain('Invalid date of birth: 1995-02-31');
+  });
+});
+
+// members.nic_number is nullable TEXT with no CHECK, REGEXP or unique constraint
+// anywhere in supabase_schema.sql or the phase migrations, so the database
+// imposes no NIC format. These tests pin that the importer does not invent one
+// either: adding a client-side format rule would reject spreadsheets the
+// database would happily store, and the schema comment shows both real NIC
+// shapes (199012345678 and 901234567V) rather than a single rigid format.
+describe('NIC number handling', () => {
+  it('accepts a synthetic value, because no constraint requires a format', () => {
+    const [row] = buildImportRows([
+      { 'Full Name': 'Test Person', Phone: '0771234567', 'NIC Number': 'TESTNIC001' },
+    ]);
+
+    expect(row.nic_number).toBe('TESTNIC001');
+    expect(row.isValid).toBe(true);
+  });
+
+  it('accepts both real NIC shapes', () => {
+    const [twelve, nine] = buildImportRows([
+      { 'Full Name': 'Twelve Digit', Phone: '0771234567', 'NIC Number': '199012345678' },
+      { 'Full Name': 'Nine Digit', Phone: '0771234568', 'NIC Number': '901234567V' },
+    ]);
+
+    expect(twelve.isValid).toBe(true);
+    expect(nine.isValid).toBe(true);
+  });
+
+  it('leaves a blank NIC unset rather than storing an empty string', () => {
+    const [row] = buildImportRows([{ 'Full Name': 'No NIC', Phone: '0771234567' }]);
+
+    expect(row.nic_number).toBeNull();
+    expect(row.isValid).toBe(true);
+  });
+
+  it('does not treat two members sharing a NIC as duplicates', () => {
+    const rows = flagInFileDuplicates(
+      buildImportRows([
+        { 'Full Name': 'First', Phone: '0771234567', 'NIC Number': '199012345678' },
+        { 'Full Name': 'Second', Phone: '0771234568', 'NIC Number': '199012345678' },
+      ])
+    );
+
+    expect(rows.every((r) => r.isValid)).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { toMessage } from '../lib/supabaseErrors';
+import { toMessage, stageError, describeError, isMissingFunction } from '../lib/supabaseErrors';
 import { addDays } from 'date-fns';
 import { phoneSearchVariants } from '../utils/phone';
 import { canonicalPhoneKey } from '../utils/memberImport';
@@ -93,6 +93,20 @@ function emptyMemberForm() {
     medical_conditions: '',
     branch_id: '',
   };
+}
+
+/**
+ * A blank spreadsheet cell must reach the database as NULL, not as '' or '   '.
+ *
+ * The step-by-step path already did this with `.trim() || null` on every optional
+ * field. Without the same treatment here the atomic function would receive
+ * '   ' where the old path sent null, and the two would store different values
+ * for the same sheet. The function also applies NULLIF(btrim(x), '') so the
+ * guarantee does not depend on the caller.
+ */
+function textOrNull(value) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 export const memberService = {
@@ -222,9 +236,101 @@ export const memberService = {
     return withPlanSummary(data[0]);
   },
 
+  /**
+   * Registers one member, on the same path for the single-member form and the
+   * bulk import.
+   *
+   * Prefers create_member_with_membership, which writes the member, the
+   * membership and the first payment inside one database transaction so a
+   * failure part way through cannot leave a member with no subscription behind.
+   * That function arrives with
+   * supabase_migration_phase5_atomic_member_creation.sql.
+   *
+   * Until it is applied the call falls back to the older sequence of separate
+   * requests, so nothing breaks if the file has not been run yet. The fallback
+   * removes the member row again when a later step fails, which gets the same
+   * all-or-nothing outcome as the function as long as the cleanup succeeds.
+   */
   async createMember(payload, planId, photoFile = null) {
+    const { data, error } = await supabase.rpc('create_member_with_membership', {
+      p_full_name: String(payload.full_name ?? '').trim(),
+      p_nic_number: textOrNull(payload.nic_number),
+      p_email: textOrNull(payload.email),
+      p_phone: String(payload.phone ?? '').trim(),
+      p_whatsapp_number: textOrNull(payload.whatsapp_number),
+      p_district: textOrNull(payload.district),
+      p_address: textOrNull(payload.address),
+      p_gender: textOrNull(payload.gender),
+      p_date_of_birth: payload.date_of_birth || null,
+      p_emergency_contact: textOrNull(payload.emergency_contact),
+      p_medical_conditions: textOrNull(payload.medical_conditions),
+      p_branch_id: payload.branch_id || null,
+      p_plan_id: planId || null,
+      p_payment_method: payload.payment_method || 'Cash',
+    });
+
+    if (!error) {
+      const member = await this.getMemberById(data?.member_id);
+      if (!member) throw toMessage(new Error('The member was saved but could not be read back.'));
+      return this.attachMemberPhoto(member, photoFile);
+    }
+
+    if (isMissingFunction(error)) {
+      return this.createMemberStepByStep(payload, planId, photoFile);
+    }
+
+    // The function ran and failed, which means it rolled back. Reporting the
+    // stage matters: with the atomic path a member-insert failure is the only
+    // kind there is, because the membership and payment writes are inside the
+    // same transaction as the member.
+    throw stageError('member-insert', error, 'Could not save this member.');
+  },
+
+  /**
+   * The photo is uploaded after the row exists, because the storage path is
+   * namespaced by member id. Doing it the other way round would mean either a
+   * client-generated folder that does not match the member, or an orphaned file
+   * when the insert fails.
+   *
+   * A photo failure does NOT fail the registration. The member is already on
+   * file and losing them because a jpeg failed to upload would be the far worse
+   * outcome, so the error is handed back for the UI to show and the photo can be
+   * added later from the profile.
+   */
+  async attachMemberPhoto(member, photoFile) {
+    if (!photoFile) return { ...withPlanSummary(member), photoError: null };
+
+    try {
+      const avatarUrl = await storageService.uploadMemberPhoto({
+        memberId: member.id,
+        file: photoFile,
+      });
+
+      const { error: avatarError } = await supabase
+        .from('members')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', member.id);
+
+      if (avatarError) throw toMessage(avatarError);
+
+      member.avatar_url = avatarUrl;
+    } catch (error) {
+      return { ...withPlanSummary(member), photoError: toMessage(error, 'The photo could not be saved.') };
+    }
+
+    return { ...withPlanSummary(member), photoError: null };
+  },
+
+  /**
+   * The pre-phase-5 path: three independent PostgREST requests, each its own
+   * transaction. Reachable only while the database has no
+   * create_member_with_membership function.
+   */
+  async createMemberStepByStep(payload, planId, photoFile = null) {
     const { data: codeRow, error: codeError } = await supabase.rpc('next_member_code');
-    if (codeError) throw toMessage(codeError, 'Could not generate a member code.');
+    if (codeError) {
+      throw stageError('member-code', codeError, 'Could not generate a member code.');
+    }
 
     const memberCode = codeRow;
     const qrCodeId = `${memberCode}.${Date.now().toString(36).toUpperCase()}`;
@@ -257,7 +363,42 @@ export const memberService = {
       .select(MEMBER_SELECT)
       .single();
 
-    if (error) throw toMessage(error);
+    if (error) throw stageError('member-insert', error, 'Could not save this member.');
+
+    // Past this point the member row exists but the registration is not finished.
+    // Without the atomic function there is no transaction spanning the remaining
+    // writes, so the row is removed again here rather than left behind. This only
+    // ever deletes the row this same call just inserted, identified by the id the
+    // insert returned, so it cannot touch an existing member. memberships and
+    // payments cascade from members, so a membership that did get created goes
+    // with it.
+    //
+    // If the cleanup itself fails the failure is reported as a partial, because at
+    // that point the member really is on file and pretending otherwise would send
+    // the next attempt straight into a duplicate.
+    const failAfterMemberSaved = async (stage, laterError, fallback) => {
+      const wrapped = stageError(stage, laterError, fallback);
+      const { error: cleanupError } = await supabase
+        .from('members')
+        .delete()
+        .eq('id', member.id);
+
+      // The row is only still on file when the cleanup failed, so it is the
+      // failure of the cleanup, not the success of the write, that makes this a
+      // partial rather than a clean failure.
+      wrapped.rolledBack = !cleanupError;
+      wrapped.memberCreated = Boolean(cleanupError);
+      wrapped.memberId = cleanupError ? member.id : null;
+      wrapped.memberCode = cleanupError ? member.member_code || memberCode : null;
+
+      if (cleanupError) {
+        wrapped.detail = [wrapped.detail, `The member row could not be cleaned up: ${cleanupError.message}`]
+          .filter(Boolean)
+          .join(' ');
+      }
+
+      return wrapped;
+    };
 
     if (planId) {
       const { data: plan, error: planError } = await supabase
@@ -266,7 +407,9 @@ export const memberService = {
         .eq('id', planId)
         .maybeSingle();
 
-      if (planError) throw toMessage(planError, 'Could not load that plan.');
+      if (planError) {
+        throw await failAfterMemberSaved('plan-lookup', planError, 'Could not load that plan.');
+      }
 
       if (plan) {
         const startDate = new Date().toISOString().slice(0, 10);
@@ -286,13 +429,25 @@ export const memberService = {
           .select('id')
           .single();
 
-        if (membershipError) throw toMessage(membershipError, 'Could not start the membership.');
+        if (membershipError) {
+          throw await failAfterMemberSaved(
+            'membership',
+            membershipError,
+            'Could not start the membership.'
+          );
+        }
 
         if (Number(plan.price) > 0) {
           const { data: receiptRow, error: receiptError } = await supabase.rpc(
             'next_receipt_number'
           );
-          if (receiptError) throw toMessage(receiptError, 'Could not generate a receipt number.');
+          if (receiptError) {
+            throw await failAfterMemberSaved(
+              'receipt-number',
+              receiptError,
+              'Could not generate a receipt number.'
+            );
+          }
 
           const { error: paymentError } = await supabase.from('payments').insert([
             {
@@ -306,42 +461,14 @@ export const memberService = {
             },
           ]);
 
-          if (paymentError) throw toMessage(paymentError, 'Could not record the payment.');
+          if (paymentError) {
+            throw await failAfterMemberSaved('payment', paymentError, 'Could not record the payment.');
+          }
         }
       }
     }
 
-    // The photo is uploaded after the row exists, because the storage path is
-    // namespaced by member id. Doing it the other way round would mean either a
-    // client-generated folder that does not match the member, or an orphaned
-    // file when the insert fails.
-    //
-    // A photo failure does NOT fail the registration. The member is already on
-    // file and losing them because a jpeg failed to upload would be the far
-    // worse outcome, so the error is handed back for the UI to show and the
-    // photo can be added later from the profile.
-    let photoError = null;
-    if (photoFile) {
-      try {
-        const avatarUrl = await storageService.uploadMemberPhoto({
-          memberId: member.id,
-          file: photoFile,
-        });
-
-        const { error: avatarError } = await supabase
-          .from('members')
-          .update({ avatar_url: avatarUrl })
-          .eq('id', member.id);
-
-        if (avatarError) throw toMessage(avatarError);
-
-        member.avatar_url = avatarUrl;
-      } catch (error) {
-        photoError = toMessage(error, 'The photo could not be saved.');
-      }
-    }
-
-    return { ...withPlanSummary(member), photoError };
+    return this.attachMemberPhoto(member, photoFile);
   },
 
   async updateMember(id, payload) {
@@ -382,9 +509,14 @@ export const memberService = {
   },
 
   async bulkImportMembers({ rows, planId = null, paymentMethod = 'Cash', onProgress }) {
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
+    // Rows whose member record was written but whose plan, membership or payment
+    // step then failed, and rows that never made it into the members table. Both
+    // are reported, but they mean opposite things to whoever fixes the file: a
+    // failed row can simply be retried, a partial row is already on file and
+    // re-uploading it creates a second member with the same phone number.
+    const created = [];
+    const partial = [];
+    const failed = [];
 
     // Only rows the validator accepted are written. A row that failed
     // validation must never be inserted with a corrected-up value, so this is
@@ -394,7 +526,7 @@ export const memberService = {
     for (let i = 0; i < importable.length; i++) {
       const row = importable[i];
       try {
-        await this.createMember(
+        const member = await this.createMember(
           {
             full_name: row.full_name,
             nic_number: row.nic_number || null,
@@ -412,10 +544,35 @@ export const memberService = {
           planId,
           null
         );
-        successCount++;
+
+        created.push({
+          row: row.excelRow ?? row.rowId,
+          name: row.full_name,
+          phone: row.phone,
+          memberCode: member?.member_code || null,
+        });
       } catch (err) {
-        errorCount++;
-        errors.push({ row: row.rowId, name: row.full_name, error: err?.message || String(err) });
+        const described = describeError(err, 'Could not save this member.');
+        // The untranslated code and detail are what identify the rule that
+        // rejected the row: 22007 is a value the wrong type, 23514 a check
+        // violation, 23505 a unique index, PGRST204 a column the database does
+        // not have. Collapsing these into one sentence is what made twenty
+        // identical failures look like twenty duplicate phone numbers.
+        const record = {
+          row: row.excelRow ?? row.rowId,
+          name: row.full_name,
+          phone: row.phone,
+          stage: err?.stage || 'member-insert',
+          code: described.code,
+          message: described.message,
+          detail: described.detail,
+          hint: described.hint,
+          memberCreated: Boolean(err?.memberCreated),
+          memberCode: err?.memberCode || null,
+        };
+
+        if (record.memberCreated) partial.push(record);
+        else failed.push(record);
       }
 
       if (onProgress) {
@@ -423,7 +580,20 @@ export const memberService = {
       }
     }
 
-    return { successCount, errorCount, errors };
+    return {
+      // Kept as plain counts because the summary line and the tests both read
+      // them, and a caller should not have to length() an array to render a
+      // number.
+      successCount: created.length,
+      errorCount: failed.length,
+      partialCount: partial.length,
+      created,
+      partial,
+      failed,
+      // One flat list, for the table, ordered by the spreadsheet row so it reads
+      // in the same order as the file.
+      errors: [...partial, ...failed].sort((a, b) => (a.row ?? 0) - (b.row ?? 0)),
+    };
   },
 
   // Canonical phone keys of every number already on file, used by the bulk
