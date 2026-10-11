@@ -54,6 +54,11 @@ A responsive Gym Management web application built with React, Vite, Tailwind CSS
     - A compact Present/Leave column for the current month for every visible row, batched into one request per 100 players, counted by the same rules as the profile calendar. The day-by-day record stays on the profile.
     - Registering a player opens their pass immediately, with a link straight to their profile.
 
+12. **Payment Reminders & History**
+    - The Reminders screen (`/payment-reminders`) lists every open membership that is 29 days or more past its start date, the day a renewal is due. The 28-day rule lives in `src/utils/reminders.js` and is unit tested.
+    - Each row shows the player, plan, start date, how many days into the cycle they are and when they were last reminded, with a one-click WhatsApp button that opens the chat pre-written and logs the send in the `payment_reminders` table.
+    - Every player's profile carries a **Payment history** section (latest five) with a link into the full page (`/members/:id/payments`). The full history shows receipt, date, time (in the club timezone), amount, Cash/Card method, status and notes, with method/status filters, a search box, summary totals and a printable receipt for any transaction, plus a trail of reminders already sent.
+
 ## Project Structure
 
 ```
@@ -67,6 +72,8 @@ Gym/
 ├── supabase_migration_phase2_daypass_attendance.sql
 ├── supabase_migration_phase3_player_profiles.sql
 ├── supabase_migration_phase4_activity_logs_and_roles.sql
+├── supabase_migration_phase5_atomic_member_creation.sql
+├── supabase_migration_phase6_payment_reminders.sql
 ├── tailwind.config.js
 ├── vercel.json                # Vercel SPA rewrites
 ├── vite.config.js
@@ -106,7 +113,8 @@ Gym/
     │   ├── supabaseErrors.js  # error-code -> readable message
     │   └── gymCardPdf.js      # gym card drawn straight into a PDF
     ├── pages/                 # Dashboard, Members, PlayerProfile, Memberships,
-    │                          # Plans, Attendance, QRScanner, Payments, Reports,
+    │                          # Plans, Attendance, QRScanner, Payments,
+    │                          # PaymentReminders, PaymentHistory, Reports,
     │                          # Settings, Login, Setup, SetupRequired, NotFound
     ├── routes/
     │   └── AppRoutes.jsx
@@ -120,10 +128,12 @@ Gym/
     │   ├── dashboardService.js
     │   ├── settingsService.js
     │   ├── staffService.js
-    │   └── storageService.js  # private member-photos bucket
+    │   ├── storageService.js  # private member-photos bucket
+    │   └── reminderService.js  # due reminders + the send log
     └── utils/                 # pure logic, unit tested
         ├── attendanceMath.js  # club-local dates and monthly attendance
         ├── membership.js      # admission rules for the front door
+        ├── reminders.js       # the 28-day reminder rule + message
         ├── gymCard.js         # gym card data + filenames
         ├── phone.js           # Sri Lankan number normalisation
         ├── brand.js
@@ -151,7 +161,7 @@ npm install
 
 ### 1. Create the database
 
-Run the SQL files in the Supabase SQL editor, in this order. All four are idempotent, so re-running one after an update is safe.
+Run the SQL files in the Supabase SQL editor, in this order. All of them are idempotent, so re-running one after an update is safe.
 
 | Order | File | What it does |
 | --- | --- | --- |
@@ -159,6 +169,8 @@ Run the SQL files in the Supabase SQL editor, in this order. All four are idempo
 | 2 | `supabase_migration_phase2_daypass_attendance.sql` | Club timezone, `attendance.attendance_date`, the reporting indexes, the one-check-in-per-day unique index, day-pass plans and the private `member-photos` bucket. |
 | 3 | `supabase_migration_phase3_player_profiles.sql` | The `log_attendance()` check-in engine and a re-assertion of the photo bucket and its policies. |
 | 4 | `supabase_migration_phase4_activity_logs_and_roles.sql` | The `activity_logs` audit trail behind the Activity Logs screen, and the `super_admin` role that Admin Access already offers. |
+| 5 | `supabase_migration_phase5_atomic_member_creation.sql` | The `create_member_with_membership()` function that writes a member, a membership and the first payment in one transaction. |
+| 6 | `supabase_migration_phase6_payment_reminders.sql` | The `payment_reminders` log behind the Payment Reminders screen. |
 
 `supabase_schema.sql` creates `profiles`, `gym_settings`, `branches`, `plans`, `members`, `memberships`, `attendance`, `payments`, the `current_role()` / `is_admin()` / `is_bootstrap_needed()` helper functions, the `next_member_code()` and `next_receipt_number()` sequences, and all RLS policies.
 
@@ -200,7 +212,7 @@ npm test           # one run
 npm run test:watch # re-runs on change
 ```
 
-The suite covers the pure logic that is expensive to get wrong and easy to break silently: club-local date maths and the monthly attendance summary (including the batched version behind the members list column), the front-door admission rules, Sri Lankan phone normalisation and the search variants built from it, the gym card data and the PDF it produces, the storage path rules, the attendance and member services, and the theme contrast check. Component tests render to static markup, so there is no DOM shim to keep in sync.
+The suite covers the pure logic that is expensive to get wrong and easy to break silently: club-local date maths and the monthly attendance summary (including the batched version behind the members list column), the front-door admission rules, the 28-day payment reminder rule and the WhatsApp message it writes, Sri Lankan phone normalisation and the search variants built from it, the gym card data and the PDF it produces, the storage path rules, the attendance and member services, and the theme contrast check. Component tests render to static markup, so there is no DOM shim to keep in sync.
 
 The one thing the suite cannot check is the database's own guarantees. One row per member per club day, the duplicate report, and the signed photo bucket are enforced in Postgres, so they are verified by the manual steps in [Getting Started](#1-create-the-database) rather than by a mock.
 
@@ -225,7 +237,9 @@ Note: `index.html` and `assets/` use absolute paths, and `BrowserRouter` is moun
 - **Phase 2 — done**: live Supabase schema, RLS policies, role-based access, member/membership/plan/payment/attendance CRUD.
 - **Phase 3 — done**: QR scanner, renewals, receipt generation, reports, club settings, branches, staff management.
 - **Phase 4 — done**: player profiles, member photos in a private bucket, printable gym cards, and attendance counted in club-local days with a database-enforced one-check-in-per-day rule.
+- **Phase 5 — done**: atomic member creation (member + membership + first payment in one transaction) and the activity log with the `super_admin` role.
+- **Phase 6 — done**: the payment reminder list with one-click WhatsApp sends and the per-player payment history page.
 - Branded light/dark theming, with a contrast test that fails if either theme drifts.
-- 260 unit and component tests, run with `npm test`.
+- 397 unit and component tests, run with `npm test`.
 
 Note: the "phase" numbers in the SQL filenames are the database migrations, not the phases above. Run them in the order given in [Getting Started](#1-create-the-database).

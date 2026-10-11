@@ -11,6 +11,8 @@ import { SetupPage } from '../pages/SetupPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { MembersPage } from '../pages/MembersPage';
 import { PlayerProfilePage } from '../pages/PlayerProfilePage';
+import { PaymentHistoryPage } from '../pages/PaymentHistoryPage';
+import { PaymentRemindersPage } from '../pages/PaymentRemindersPage';
 import { AttendancePage } from '../pages/AttendancePage';
 import { QRScannerPage } from '../pages/QRScannerPage';
 import { MembershipsPage } from '../pages/MembershipsPage';
@@ -86,11 +88,13 @@ export function AppRoutes() {
         <Route path="/members" element={<MembersPage />} />
         {/* Declared after /members so the more specific path wins. */}
         <Route path="/members/:id" element={<PlayerProfilePage />} />
+        <Route path="/members/:id/payments" element={<PaymentHistoryPage />} />
         <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/qr-scanner" element={<QRScannerPage />} />
         <Route path="/memberships" element={<MembershipsPage />} />
         <Route path="/plans" element={<PlansPage />} />
         <Route path="/payments" element={<PaymentsPage />} />
+        <Route path="/payment-reminders" element={<PaymentRemindersPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/activity-logs" element={<ActivityLogsPage />} />

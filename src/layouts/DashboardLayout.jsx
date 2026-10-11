@@ -21,6 +21,7 @@ import {
   Moon,
   History,
   ShieldCheck,
+  BellRing,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
@@ -37,6 +38,7 @@ const navItems = [
   { name: 'Memberships', path: '/memberships', icon: CreditCard },
   { name: 'Plans', path: '/plans', icon: Layers },
   { name: 'Payments', path: '/payments', icon: CircleDollarSign },
+  { name: 'Reminders', path: '/payment-reminders', icon: BellRing },
   { name: 'Reports', path: '/reports', icon: BarChart3 },
   { name: 'Settings', path: '/settings', icon: Settings },
 ];

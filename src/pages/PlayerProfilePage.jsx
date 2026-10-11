@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   Activity,
   ArrowLeft,
+  ArrowRight,
   BadgeCheck,
   CalendarRange,
   CreditCard,
@@ -17,7 +18,7 @@ import {
 import { memberService } from '../services/memberService';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { settingsService } from '../services/settingsService';
-import { toDateKey } from '../utils/attendanceMath';
+import { toDateKey, formatTimestamp } from '../utils/attendanceMath';
 import { buildGymCardData } from '../utils/gymCard';
 import { formatPhone } from '../utils/phone';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
@@ -403,32 +404,55 @@ export function PlayerProfilePage() {
           <Card>
             <CardHeader>
               <CardTitle icon={CreditCard}>Payment history</CardTitle>
+              <Link
+                to={`/members/${member.id}/payments`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand-cyan hover:text-sky-300"
+              >
+                View all
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </CardHeader>
 
             {member.paymentHistory.length === 0 ? (
               <p className="text-sm text-slate-400">No payments recorded.</p>
             ) : (
               <ul className="space-y-2">
-                {member.paymentHistory.map((payment) => (
-                  <li
-                    key={payment.id}
-                    className="rounded-xl bg-gym-850/50 p-3 flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
+                {member.paymentHistory.slice(0, 5).map((payment) => (
+                  <li key={payment.id} className="rounded-xl bg-gym-850/50 p-3 space-y-1">
+                    <div className="flex items-center justify-between gap-3">
                       <p className="text-sm text-slate-200 font-medium">
                         {formatMoney(payment.amount, currency) || payment.amount}
                       </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        {formatDate(payment.transaction_date)} · {payment.payment_method}
-                        {payment.receipt_number ? ` · ${payment.receipt_number}` : ''}
-                      </p>
+                      <Badge variant={payment.payment_status === 'Paid' ? 'emerald' : 'amber'}>
+                        {payment.payment_status}
+                      </Badge>
                     </div>
-                    <Badge variant={payment.payment_status === 'Paid' ? 'emerald' : 'amber'}>
-                      {payment.payment_status}
-                    </Badge>
+                    <p className="text-xs text-slate-500">
+                      {formatTimestamp(payment.transaction_date, settings?.timezone)}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {payment.payment_method}
+                      {payment.receipt_number ? ` · ${payment.receipt_number}` : ''}
+                    </p>
+                    {payment.notes && (
+                      <p className="text-[11px] text-slate-500 truncate">{payment.notes}</p>
+                    )}
                   </li>
                 ))}
               </ul>
+            )}
+
+            {member.paymentHistory.length > 5 && (
+              <p className="text-[11px] text-slate-500 mt-3">
+                Showing the latest 5 of {member.paymentHistory.length} payments.{' '}
+                <Link
+                  to={`/members/${member.id}/payments`}
+                  className="text-brand-cyan hover:text-sky-300"
+                >
+                  See the full history
+                </Link>
+                .
+              </p>
             )}
           </Card>
         </div>
