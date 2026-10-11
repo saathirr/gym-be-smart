@@ -55,7 +55,7 @@ A responsive Gym Management web application built with React, Vite, Tailwind CSS
     - Registering a player opens their pass immediately, with a link straight to their profile.
 
 12. **Payment Reminders & History**
-    - The Reminders screen (`/payment-reminders`) lists every open membership that is 29 days or more past its start date, the day a renewal is due. The 28-day rule lives in `src/utils/reminders.js` and is unit tested.
+    - The Reminders screen (`/payment-reminders`) lists every membership that is 29 days or more past its start date, the day a renewal is due. Lapsed memberships stay on the list as overdue until the member renews, so an unpaid renewal is never lost. The 28-day rule lives in `src/utils/reminders.js` and is unit tested.
     - Each row shows the player, plan, start date, how many days into the cycle they are and when they were last reminded, with a one-click WhatsApp button that opens the chat pre-written and logs the send in the `payment_reminders` table.
     - Every player's profile carries a **Payment history** section (latest five) with a link into the full page (`/members/:id/payments`). The full history shows receipt, date, time (in the club timezone), amount, Cash/Card method, status and notes, with method/status filters, a search box, summary totals and a printable receipt for any transaction, plus a trail of reminders already sent.
 

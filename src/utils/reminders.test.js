@@ -73,13 +73,44 @@ describe('evaluatePaymentReminder', () => {
     );
   });
 
-  it('never fires for a closed membership, however old', () => {
+  it('keeps chasing a lapsed membership until it is renewed', () => {
     const result = evaluatePaymentReminder(
       member({ membership_status: 'Expired' }),
       '2026-06-01'
     );
+    expect(result.isDue).toBe(true);
+    expect(result.reason).toBe('due');
+    expect(result.status).toBe('Expired');
+  });
+
+  it('stops reminding a membership staff cancelled', () => {
+    const result = evaluatePaymentReminder(member({ membership_status: 'Cancelled' }), DAY_29);
     expect(result.isDue).toBe(false);
-    expect(result.reason).toBe('not-open');
+    expect(result.reason).toBe('membership-cancelled');
+  });
+
+  it('leaves a suspended member off the list even when a payment is late', () => {
+    const result = evaluatePaymentReminder(
+      member({ status: 'Suspended', membership_status: 'Expired' }),
+      '2026-06-01'
+    );
+    expect(result.isDue).toBe(false);
+    expect(result.reason).toBe('member-suspended');
+  });
+
+  it('reads the current cycle from the nested history, not an older one', () => {
+    const rows = [
+      { status: 'Expired', start_date: '2026-01-01', end_date: '2026-01-31' },
+      { status: 'Active', start_date: '2026-04-01', end_date: '2026-05-01' },
+    ];
+    expect(evaluatePaymentReminder(member({ memberships: rows }), '2026-04-10').isDue).toBe(false);
+  });
+
+  it('reminds a lapsed member read from the nested history', () => {
+    const rows = [{ status: 'Expired', start_date: '2026-01-01', end_date: '2026-01-31' }];
+    const result = evaluatePaymentReminder(member({ memberships: rows }), '2026-02-15');
+    expect(result.isDue).toBe(true);
+    expect(result.daysSinceStart).toBe(45);
   });
 
   it('reports a member with no membership', () => {

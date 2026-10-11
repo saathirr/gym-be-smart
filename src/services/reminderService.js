@@ -46,14 +46,19 @@ export const reminderService = {
    * Every player whose next payment is due a reminder today, newest to fall
    * due first.
    *
-   * The due rule is applied in the browser over the active member list rather
-   * than in SQL so the same pure function that the profile and the tests use is
-   * the only place the 28-day rule lives. The list is capped, which is fine for
-   * a single club; a chain larger than the cap would need paging here.
+   * The due rule is applied in the browser over the member list rather than in
+   * SQL so the same pure function that the profile and the tests use is the only
+   * place the 28-day rule lives. The list is capped, which is fine for a single
+   * club; a chain larger than the cap would need paging here.
+   *
+   * Every member is scanned, not just the active ones: the sync job flips a
+   * member to 'Expired' the day their membership lapses, and that unpaid renewal
+   * is exactly who needs chasing. evaluatePaymentReminder() decides who is
+   * chaseable from the membership history it was given.
    */
   async getDueReminders({ timeZone, limit = 1000 } = {}) {
     const today = await getClubToday({ timeZone });
-    const members = await memberService.getMembers({ status: 'Active', limit });
+    const members = await memberService.getMembers({ status: 'ALL', limit });
 
     const due = members
       .map((member) => ({ member, reminder: evaluatePaymentReminder(member, today) }))

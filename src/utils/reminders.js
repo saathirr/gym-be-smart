@@ -21,6 +21,50 @@ import { OPEN_MEMBERSHIP_STATUSES } from './membership';
 
 export const REMINDER_DAYS_AFTER_START = 28;
 
+// A reminder chases a payment, so it is aimed at people the club still bills:
+// an active member, or one whose membership has lapsed and has not renewed yet.
+// Suspended and manually deactivated members are deliberately left off the list.
+const CHASEABLE_MEMBER_STATUSES = ['Active', 'Expired'];
+
+// Membership statuses that keep a payment due. 'Expired' is included on purpose:
+// the sync job flips a membership to Expired the moment its end date passes, and
+// that unpaid renewal is exactly the one reception needs to chase. Only states
+// staff set deliberately (Cancelled) stop the reminders.
+function isChaseableMembershipStatus(status) {
+  return OPEN_MEMBERSHIP_STATUSES.includes(status) || status === 'Expired';
+}
+
+// Picks the membership that represents the member's current billing cycle.
+//
+// When the memberService row carries the nested history, the newest membership
+// that is still open wins; if none is open, the most recently started one is the
+// cycle that just lapsed and is the one being chased. The flattened fields are
+// the fallback for callers (the profile, the tests) that only pass one.
+function selectReminderCycle(member) {
+  const list = Array.isArray(member.memberships)
+    ? member.memberships.filter((sub) => sub && sub.start_date)
+    : [];
+
+  if (list.length > 0) {
+    const open = list.find((sub) => OPEN_MEMBERSHIP_STATUSES.includes(sub.status));
+    const newest = [...list].sort((a, b) =>
+      String(b.start_date).localeCompare(String(a.start_date))
+    )[0];
+    const chosen = open || newest;
+    return { status: chosen.status, startDate: chosen.start_date, endDate: chosen.end_date };
+  }
+
+  if (member.membership_id || member.start_date) {
+    return {
+      status: member.membership_status,
+      startDate: member.start_date,
+      endDate: member.expiration_date,
+    };
+  }
+
+  return null;
+}
+
 function dayDiff(fromKey, toKey) {
   const from = parseKey(fromKey);
   const to = parseKey(toKey);
@@ -48,13 +92,16 @@ export function daysUntil(fromKey, toKey) {
 /**
  * Works out whether one member's next payment is due a reminder today.
  *
- * @param {object} member   flattened member row from memberService
- *                          (membership_id, membership_status, start_date,
- *                          expiration_date, plan_name, plan_price)
+ * @param {object} member   member row from memberService. May carry the nested
+ *                          `memberships` history (members list) or the
+ *                          flattened current fields (membership_id,
+ *                          membership_status, start_date, expiration_date,
+ *                          plan_name, plan_price).
  * @param {string} todayKey club-local 'YYYY-MM-DD'
  * @returns {{
  *   hasMembership: boolean,
  *   isOpen: boolean,
+ *   status: string | null,
  *   startDate: string | null,
  *   expiryDate: string | null,
  *   dueDate: string | null,
@@ -86,14 +133,23 @@ export function evaluatePaymentReminder(
 
   if (!member) return blank('no-member');
 
-  const start = toDateKey(member.start_date);
-  const expiry = toDateKey(member.expiration_date);
-  const hasMembership = Boolean(member.membership_id || start);
-  const isOpen = OPEN_MEMBERSHIP_STATUSES.includes(member.membership_status);
+  // A suspended or deactivated member is not chaseable even if a membership row
+  // is still attached.
+  if (member.status && !CHASEABLE_MEMBER_STATUSES.includes(member.status)) {
+    return blank(`member-${String(member.status).toLowerCase()}`);
+  }
+
+  const cycle = selectReminderCycle(member);
+  if (!cycle) return blank('no-membership');
+
+  const start = toDateKey(cycle.startDate);
+  const expiry = toDateKey(cycle.endDate);
+  const isOpen = OPEN_MEMBERSHIP_STATUSES.includes(cycle.status);
 
   const base = {
-    hasMembership,
+    hasMembership: true,
     isOpen,
+    status: cycle.status ?? null,
     startDate: start,
     expiryDate: expiry,
     dueDate: start ? addDays(start, reminderDays) : null,
@@ -101,8 +157,10 @@ export function evaluatePaymentReminder(
     daysUntilExpiry: expiry ? daysUntil(today, expiry) : null,
   };
 
-  if (!hasMembership) return { ...blank('no-membership'), ...base };
-  if (!isOpen) return { ...blank('not-open'), ...base };
+  // 'Cancelled' (and anything else staff set deliberately) ends the reminders.
+  if (!isChaseableMembershipStatus(cycle.status)) {
+    return { ...blank(`membership-${String(cycle.status || 'unknown').toLowerCase()}`), ...base };
+  }
   if (!start) return { ...blank('no-start-date'), ...base };
 
   const isDue = base.daysSinceStart >= reminderDays;
