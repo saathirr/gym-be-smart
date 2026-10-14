@@ -430,6 +430,42 @@ export function firstCheckInLabel(checkIns = [], timeZone = DEFAULT_CLUB_TIMEZON
   }).format(times[0]);
 }
 
+// Minutes spent between a check-in and a check-out, or null when the session
+// is still open (no departure) or the pair makes no sense (a departure before
+// the arrival). Both inputs are real instants, so no timezone is involved:
+// a duration is the same number of minutes wherever it is read.
+export function sessionMinutes(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return null;
+
+  const start = checkIn instanceof Date ? checkIn : new Date(checkIn);
+  const end = checkOut instanceof Date ? checkOut : new Date(checkOut);
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null;
+
+  return Math.round((endMs - startMs) / 60000);
+}
+
+// "1h 20m" / "45m" / "under a minute", or null while the session is open.
+//
+// Rounded to whole minutes on purpose: a duration that reads "1h 20m" is what
+// a member repeats back, and seconds would only add noise to a front-desk
+// screen. Anything under a minute is described rather than shown as "0m",
+// which would look like the scan had failed.
+export function formatDuration(checkIn, checkOut) {
+  const minutes = sessionMinutes(checkIn, checkOut);
+  if (minutes === null) return null;
+  if (minutes < 1) return 'under a minute';
+
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hours && mins) return `${hours}h ${mins}m`;
+  if (hours) return `${hours}h`;
+  return `${mins}m`;
+}
+
 export function formatTimestamp(value, timeZone = DEFAULT_CLUB_TIMEZONE) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return 'N/A';

@@ -490,3 +490,298 @@ describe('getMonthAttendance - the current-month column on the members list', ()
     ).rejects.toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 7: the scanning toggle, check-out, re-entry and the overnight sweep.
+//
+// getTodaySession() and checkout()/recordReentry() both go through
+// supabase.from('attendance'), so the mock hands out a different chain per
+// call, in the order the service makes them.
+// ---------------------------------------------------------------------------
+
+// Chain: select().eq().eq().order().limit().maybeSingle() for today's session.
+function todaySessionChain({ data = null, error = null } = {}) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data, error });
+  const limit = vi.fn(() => ({ maybeSingle }));
+  const order = vi.fn(() => ({ limit }));
+  const eqDate = vi.fn(() => ({ order }));
+  const eqMember = vi.fn(() => ({ eq: eqDate }));
+  const select = vi.fn(() => ({ eq: eqMember }));
+  return { select, eqMember, eqDate, order, limit, maybeSingle };
+}
+
+// Chain: update().eq().is().select().maybeSingle() for closing a session.
+function closeChain({ data = null, error = null } = {}) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data, error });
+  const select = vi.fn(() => ({ maybeSingle }));
+  const isNull = vi.fn(() => ({ select }));
+  const eq = vi.fn(() => ({ is: isNull }));
+  const update = vi.fn(() => ({ eq }));
+  return { update, eq, isNull, select, maybeSingle };
+}
+
+// Chain: update().eq().select().maybeSingle() for reopening a session.
+function reopenChain({ data = null, error = null } = {}) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data, error });
+  const select = vi.fn(() => ({ maybeSingle }));
+  const eq = vi.fn(() => ({ select }));
+  const update = vi.fn(() => ({ eq }));
+  return { update, eq, select, maybeSingle };
+}
+
+function rpcWithCheckIn() {
+  rpc.mockImplementation((fn) => {
+    if (fn === 'gym_today') return Promise.resolve({ data: CLUB_TODAY, error: null });
+    if (fn === 'log_attendance') return Promise.resolve({ data: [rpcRow()], error: null });
+    return Promise.resolve({ data: null, error: null });
+  });
+}
+
+describe('toggleAttendance - one scan resolves to the right action', () => {
+  it('checks in when there is no session yet', async () => {
+    getMemberByPass.mockResolvedValue(member());
+    rpcWithCheckIn();
+    from.mockReturnValue(todaySessionChain({ data: null }));
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('IN');
+    expect(result.reentry).toBeUndefined();
+    expect(result.attendance.check_in_time).toBe('2026-03-14T01:42:00.000Z');
+  });
+
+  it('checks out when the day’s session is still open', async () => {
+    getMemberByPass.mockResolvedValue(member());
+    rpcWithCheckIn();
+    from
+      .mockReturnValueOnce(
+        todaySessionChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: null,
+            method: 'QR_SCAN',
+            checkout_method: null,
+          },
+        })
+      )
+      .mockReturnValueOnce(
+        closeChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: '2026-03-14T03:02:00.000Z',
+            method: 'QR_SCAN',
+            checkout_method: 'QR_SCAN',
+          },
+        })
+      );
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('OUT');
+    expect(result.attendance.check_out_time).toBe('2026-03-14T03:02:00.000Z');
+    // check-out never calls log_attendance: it closes the existing row.
+    expect(rpc.mock.calls.some(([fn]) => fn === 'log_attendance')).toBe(false);
+  });
+
+  it('reopens the day when the member is back after an earlier departure', async () => {
+    getMemberByPass.mockResolvedValue(member());
+    rpcWithCheckIn();
+    from
+      .mockReturnValueOnce(
+        todaySessionChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: '2026-03-14T03:02:00.000Z',
+            method: 'QR_SCAN',
+            checkout_method: 'QR_SCAN',
+          },
+        })
+      )
+      .mockReturnValueOnce(
+        reopenChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: null,
+            method: 'QR_SCAN',
+            checkout_method: null,
+          },
+        })
+      );
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('IN');
+    expect(result.reentry).toBe(true);
+  });
+
+  it('still lets a member check out after their plan lapsed during the day', async () => {
+    // Leaving is never gated on membership. Only the arrival side is.
+    getMemberByPass.mockResolvedValue(member({ status: 'Expired' }));
+    rpcWithCheckIn();
+    from
+      .mockReturnValueOnce(
+        todaySessionChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: null,
+            method: 'QR_SCAN',
+          },
+        })
+      )
+      .mockReturnValueOnce(
+        closeChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: '2026-03-14T03:02:00.000Z',
+            method: 'QR_SCAN',
+            checkout_method: 'QR_SCAN',
+          },
+        })
+      );
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('OUT');
+  });
+
+  it('refuses an expired member who is trying to arrive', async () => {
+    getMemberByPass.mockResolvedValue(
+      member({ membership_status: 'Expired', expiration_date: '2026-03-13' })
+    );
+    rpcWithCheckIn();
+    from.mockReturnValue(todaySessionChain({ data: null }));
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(false);
+    expect(result.action).toBeUndefined();
+    expect(result.error).toMatch(/expired on 2026-03-13/i);
+  });
+});
+
+describe('checkout / recordCheckOut', () => {
+  it('writes check_out_time and checkout_method, guarded on the row still being open', async () => {
+    const chain = closeChain({
+      data: {
+        id: 'row-1',
+        attendance_date: CLUB_TODAY,
+        check_in_time: '2026-03-14T01:42:00.000Z',
+        check_out_time: '2026-03-14T03:02:00.000Z',
+        method: 'QR_SCAN',
+        checkout_method: 'MANUAL_ENTRY',
+      },
+    });
+    from.mockReturnValue({ update: chain.update });
+
+    const result = await attendanceService.checkout('row-1', 'MANUAL_ENTRY');
+
+    expect(result.alreadyClosed).toBe(false);
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ checkout_method: 'MANUAL_ENTRY' })
+    );
+    // The guard is what makes a double click close the session only once.
+    expect(chain.isNull).toHaveBeenCalledWith('check_out_time', null);
+  });
+
+  it('reports an already-closed session without treating it as an error', async () => {
+    // The guarded update matched no row: someone else closed it first.
+    from.mockReturnValue({ update: closeChain({ data: null }).update });
+
+    const result = await attendanceService.checkout('row-1');
+
+    expect(result.alreadyClosed).toBe(true);
+    expect(result.attendance).toBeNull();
+  });
+});
+
+describe('closeForgottenSessions', () => {
+  it('returns how many overnight sessions it closed', async () => {
+    rpc.mockImplementation((fn) => {
+      if (fn === 'gym_today') return Promise.resolve({ data: CLUB_TODAY, error: null });
+      if (fn === 'close_forgotten_attendance') return Promise.resolve({ data: 4, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const result = await attendanceService.closeForgottenSessions();
+
+    expect(result).toEqual({ closed: 4, skipped: false });
+  });
+
+  it('skips quietly when the phase 7 function is not installed yet', async () => {
+    rpc.mockImplementation((fn) => {
+      if (fn === 'gym_today') return Promise.resolve({ data: CLUB_TODAY, error: null });
+      return Promise.resolve({ data: null, error: { code: 'PGRST202' } });
+    });
+
+    const result = await attendanceService.closeForgottenSessions();
+
+    expect(result).toEqual({ closed: 0, skipped: true });
+  });
+});
+
+describe('getAttendanceLogs - time spent', () => {
+  it('derives duration_minutes and carries checkout_method', async () => {
+    const limit = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'row-1',
+          member_id: MEMBER_ID,
+          attendance_date: CLUB_TODAY,
+          check_in_time: '2026-03-14T01:00:00.000Z',
+          check_out_time: '2026-03-14T02:20:00.000Z',
+          checkout_method: 'QR_SCAN',
+          method: 'QR_SCAN',
+          members: {
+            id: MEMBER_ID,
+            full_name: 'Kasun Kalhara Perera',
+            member_code: 'M-0001',
+            status: 'Active',
+            memberships: [{ status: 'Active', plans: { name: 'Monthly' } }],
+          },
+        },
+      ],
+      error: null,
+    });
+    const order = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ order }));
+    from.mockReturnValue({ select });
+
+    const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
+
+    expect(logs[0].duration_minutes).toBe(80);
+    expect(logs[0].checkout_method).toBe('QR_SCAN');
+  });
+
+  it('retries without checkout_method on a pre-phase-7 database', async () => {
+    const limit = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST204' } })
+      .mockResolvedValueOnce({ data: [], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ order }));
+    from.mockReturnValue({ select });
+
+    const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
+
+    expect(logs).toEqual([]);
+    // First the full select, then the legacy one that omits the new column.
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1][0]).not.toMatch(/checkout_method/);
+  });
+});

@@ -5,11 +5,12 @@ import {
   QrCode,
   Camera,
   CameraOff,
-  CheckCircle2,
   AlertTriangle,
   RefreshCw,
   KeyRound,
   ImagePlus,
+  LogOut,
+  DoorOpen,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { CameraStatusOverlay } from '../components/common/CameraStatusOverlay';
@@ -21,7 +22,7 @@ import { Avatar } from '../components/members/MemberPhoto';
 import { attendanceService } from '../services/attendanceService';
 import { useGym } from '../hooks/useGym';
 import { useMemberPhotoUrls } from '../hooks/useMemberPhotoUrls';
-import { firstCheckInLabel, formatTimestamp } from '../utils/attendanceMath';
+import { firstCheckInLabel, formatDuration, formatTimestamp } from '../utils/attendanceMath';
 import {
   cameraOptionLabel,
   describeCameraError,
@@ -32,6 +33,18 @@ import { toMessage } from '../lib/supabaseErrors';
 
 const READER_ID = 'qr-reader';
 const CAMERA_FPS = 20;
+
+// The door must never wait for a press. A granted pass clears itself in a beat
+// so the next member can present their code straight away. A check-out is held
+// a little longer because it carries the time spent, which is worth reading;
+// a refusal stays up longest because whoever is at the desk needs a moment to
+// read why. Every timer starts when a result appears and is replaced by the
+// next scan's result.
+const AUTO_DISMISS_MS = {
+  in: 1700,
+  out: 2800,
+  failure: 4500,
+};
 
 export function QRScannerPage() {
   const [manualCode, setManualCode] = useState('');
@@ -55,15 +68,27 @@ export function QRScannerPage() {
   const { settings } = useGym();
   const timeZone = settings?.timezone;
 
+  // Read through a ref so the scanner callback always uses the latest club
+  // timezone without becoming a dependency of it: the camera effect keys off
+  // submitPayload, and a changed dependency would restart the live camera.
+  const timeZoneRef = useRef(timeZone);
+  useEffect(() => {
+    timeZoneRef.current = timeZone;
+  }, [timeZone]);
+
   const submitPayload = useCallback(async (payload, method) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setProcessing(true);
 
     try {
-      setScanResult(await attendanceService.logCheckIn(payload, method));
+      setScanResult(
+        await attendanceService.toggleAttendance(payload, method, {
+          timeZone: timeZoneRef.current,
+        })
+      );
     } catch (err) {
-      setScanResult({ success: false, error: toMessage(err, 'Check-in failed.') });
+      setScanResult({ success: false, error: toMessage(err, 'Scan failed.') });
     } finally {
       setProcessing(false);
       setTimeout(() => {
@@ -234,6 +259,14 @@ export function QRScannerPage() {
       )
     : null;
 
+  // What the scan actually did. A check-out is the same result shape as a
+  // check-in, only the action differs, so the screen can stay one modal.
+  const isCheckout = Boolean(scanResult?.success) && scanResult?.action === 'OUT';
+  const isReentry = Boolean(scanResult?.success) && scanResult?.reentry;
+  const resultDuration = scanResult?.success
+    ? formatDuration(scanResult.attendance?.check_in_time, scanResult.attendance?.check_out_time)
+    : null;
+
   // The photo on the result screen, so staff confirm the face and not just the
   // name. Signed in one batched request by the same hook the members list uses;
   // a member with no photo falls back to their initials, which is also what
@@ -242,6 +275,22 @@ export function QRScannerPage() {
   const { urls: scannedPhotoUrls } = useMemberPhotoUrls(
     scannedPhotoPath ? [scannedPhotoPath] : []
   );
+
+  // Hands-free result handling: the outcome announces itself and then steps out
+  // of the way on its own. A new scan lands on a fresh scanResult, which tears
+  // the pending timer down and starts the next one, so the counter is never cut
+  // short and never fires against a result that has already been replaced.
+  useEffect(() => {
+    if (!scanResult) return undefined;
+
+    let delay = AUTO_DISMISS_MS.failure;
+    if (scanResult.success) {
+      delay = scanResult.action === 'OUT' ? AUTO_DISMISS_MS.out : AUTO_DISMISS_MS.in;
+    }
+
+    const timer = setTimeout(() => setScanResult(null), delay);
+    return () => clearTimeout(timer);
+  }, [scanResult]);
 
   // Which camera the picker shows as current. Empty until the first successful
   // start, at which point the browsers that hide labels still get a numbered
@@ -252,7 +301,7 @@ export function QRScannerPage() {
     <div className="space-y-6">
       <PageHeader
         title="QR scanner"
-        description="Scan a member pass at the door to verify access and log the check-in."
+        description="Scan a pass at the door to check in or out. The scan toggles itself and the result clears automatically."
       >
         <Button
           variant="secondary"
@@ -383,33 +432,35 @@ export function QRScannerPage() {
                 disabled={processing}
                 icon={QrCode}
               >
-                {processing ? 'Verifying...' : 'Verify check-in'}
+                {processing ? 'Verifying...' : 'Verify pass'}
               </Button>
             </form>
           </Card>
 
           <Card className="p-6 space-y-4">
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              Entry rules
+              How a scan works
             </h4>
             <ul className="text-xs text-slate-400 space-y-2.5">
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-brand-emerald shrink-0 mt-1" />
-                Member must be Active with a running subscription
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0 mt-1" />
-                The first scan of the day is recorded against the club&rsquo;s local
-                date
+                First scan of the day checks the member in
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0 mt-1" />
-                Scanning again shows the original check-in time instead of adding a
-                second record
+                Next scan checks them out and shows the time spent today
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0 mt-1" />
+                Scanning after a check-out checks them back in for the day
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-1" />
+                A forgotten check-out is closed at closing time and flagged
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0 mt-1" />
-                Expired, inactive, or suspended members are refused
+                Expired, inactive, or suspended members are refused on entry
               </li>
             </ul>
           </Card>
@@ -425,17 +476,21 @@ export function QRScannerPage() {
           <div className="text-center py-4 space-y-4">
             <div
               className={`p-4 rounded-full inline-block ${
-                scanResult.success
-                  ? scanResult.alreadyCheckedIn
+                !scanResult.success
+                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  : isCheckout
                     ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
-                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                    : scanResult.alreadyCheckedIn
+                      ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
               }`}
             >
-              {scanResult.success ? (
-                <CheckCircle2 className="w-12 h-12" />
-              ) : (
+              {!scanResult.success ? (
                 <AlertTriangle className="w-12 h-12" />
+              ) : isCheckout ? (
+                <LogOut className="w-12 h-12" />
+              ) : (
+                <DoorOpen className="w-12 h-12" />
               )}
             </div>
 
@@ -451,11 +506,15 @@ export function QRScannerPage() {
               )}
 
               <h3 className="text-xl font-bold text-slate-100">
-                {scanResult.success
-                  ? scanResult.alreadyCheckedIn
-                    ? 'Already checked in'
-                    : 'Access granted'
-                  : 'Access denied'}
+                {!scanResult.success
+                  ? 'Access denied'
+                  : isCheckout
+                    ? 'Checked out'
+                    : isReentry
+                      ? 'Welcome back'
+                      : scanResult.alreadyCheckedIn
+                        ? 'Already checked in'
+                        : 'Access granted'}
               </h3>
               {scanResult.member && (
                 <p className="text-sm font-semibold text-brand-cyan mt-1">
@@ -472,7 +531,20 @@ export function QRScannerPage() {
                   : scanResult.error}
               </p>
 
-              {scanResult.success && (
+              {isCheckout && (
+                <div className="mt-3 p-3 rounded-xl bg-sky-500/10 border border-sky-500/20">
+                  <p className="text-[11px] uppercase tracking-wider text-sky-300/80 font-semibold">
+                    Time spent today
+                  </p>
+                  <p className="text-lg font-bold text-sky-300">{resultDuration || 'recorded'}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    In {resultCheckInTime || 'earlier'} • out{' '}
+                    {formatTimestamp(scanResult.attendance?.check_out_time, timeZone)}
+                  </p>
+                </div>
+              )}
+
+              {scanResult.success && !isCheckout && (
                 <p className="text-xs text-slate-400 mt-2">
                   {scanResult.alreadyCheckedIn ? (
                     <>
@@ -484,7 +556,7 @@ export function QRScannerPage() {
                     </>
                   ) : (
                     <>
-                      Checked in at{' '}
+                      {isReentry ? 'Checked in again at ' : 'Checked in at '}
                       <span className="text-slate-200 font-medium">
                         {resultCheckInTime || 'now'}
                       </span>{' '}
@@ -509,12 +581,18 @@ export function QRScannerPage() {
               )}
             </div>
 
+            <p className="text-[11px] text-slate-500">
+              {scanResult.success
+                ? 'Ready for the next pass. This closes on its own.'
+                : 'Closes on its own — no need to tap anything.'}
+            </p>
+
             <Button
               variant="primary"
               className="w-full mt-4"
               onClick={() => setScanResult(null)}
             >
-              Dismiss and scan next
+              Scan next now
             </Button>
           </div>
         )}

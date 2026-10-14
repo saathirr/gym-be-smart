@@ -4,6 +4,7 @@ import { memberService } from './memberService';
 import {
   DEFAULT_CLUB_TIMEZONE,
   getClubDayRangeIso,
+  sessionMinutes,
   toDateKey,
   todayKey,
 } from '../utils/attendanceMath';
@@ -35,6 +36,7 @@ const ATTENDANCE_SELECT = `
   attendance_date,
   check_in_time,
   check_out_time,
+  checkout_method,
   method,
   notes,
   members (
@@ -45,6 +47,19 @@ const ATTENDANCE_SELECT = `
     memberships ( status, plans ( name ) )
   )
 `;
+
+// Pre-phase-7 databases have no checkout_method column, and PostgREST rejects
+// the whole select when one column is unknown. This variant is retried once on
+// that error so the attendance screen keeps working (minus the forgotten
+// check-out flag) until the phase 7 migration is run.
+const ATTENDANCE_SELECT_LEGACY = ATTENDANCE_SELECT.replace(/\n\s*checkout_method,/, '');
+
+// PostgREST reports an unknown column as PGRST204, Postgres as 42703. Both mean
+// "this database predates that column", which is a fallback and not an error
+// worth surfacing: the caller retries with the older select instead.
+function isMissingColumn(error) {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
 
 function withMember(row) {
   const activeMembership = row.members?.memberships?.find(
@@ -59,6 +74,8 @@ function withMember(row) {
     attendance_date: row.attendance_date || null,
     check_in_time: row.check_in_time,
     check_out_time: row.check_out_time,
+    checkout_method: row.checkout_method || null,
+    duration_minutes: sessionMinutes(row.check_in_time, row.check_out_time),
     method: row.method,
     notes: row.notes,
     status: row.members?.status === 'Active' ? 'Verified' : 'Flagged',
@@ -94,13 +111,6 @@ const CHUNK_SIZE = 100;
 
 const MONTH_ROW_SELECT = 'member_id, attendance_date, check_in_time, check_out_time';
 
-// PostgREST reports an unknown column as PGRST204, Postgres as 42703. Both mean
-// "this database predates the attendance_date column", which is a fallback and
-// not an error worth surfacing.
-function isMissingAttendanceDate(error) {
-  return error?.code === '42703' || error?.code === 'PGRST204';
-}
-
 async function fetchMonthAttendanceChunk(
   memberIds,
   { monthStart, monthEnd, timeZone, limit }
@@ -114,7 +124,7 @@ async function fetchMonthAttendanceChunk(
     .limit(limit);
 
   if (!error) return data || [];
-  if (!isMissingAttendanceDate(error)) throw toMessage(error);
+  if (!isMissingColumn(error)) throw toMessage(error);
 
   // Before the column existed, the same window is expressed against the raw
   // timestamp, converted into UTC instants by the club's own offset. The rows
@@ -135,24 +145,63 @@ async function fetchMonthAttendanceChunk(
   return fallback.data || [];
 }
 
+/**
+ * Why a member may not be admitted, or null when they may.
+ *
+ * The three checks run in order of specificity so the front desk gets the
+ * clearest message: a suspended account, then a lapsed membership with the
+ * exact expiry date, then the shared admission rule (an OPEN subscription
+ * whose dates actually cover today). Check-out never calls this - a member is
+ * always allowed to leave.
+ */
+function membershipRefusal(member, today) {
+  if (member.status !== 'Active') {
+    return `Access denied - ${member.full_name} is marked "${member.status}". Renew the membership first.`;
+  }
+
+  // An end_date is inclusive: a membership ending today is still valid for
+  // the whole of that day. Comparing dates as keys in the club's zone avoids
+  // both the UTC-midnight trap and the browser's own timezone.
+  if (member.expiration_date && toDateKey(member.expiration_date) < today) {
+    return `Access denied - the membership for ${member.full_name} expired on ${member.expiration_date}.`;
+  }
+
+  // Final authority, shared with the gym card and the dashboard: an OPEN
+  // subscription (Active or Expiring) whose dates actually cover today.
+  const admission = evaluateMembershipAdmission(member, today);
+  if (!admission.allowed) {
+    return `Access denied - ${admission.detail}`;
+  }
+
+  return null;
+}
+
 export const attendanceService = {
   getClubToday,
 
   async getAttendanceLogs({ search = '', date = 'ALL', limit = 300, timeZone } = {}) {
-    let query = supabase
-      .from('attendance')
-      .select(ATTENDANCE_SELECT)
-      .order('check_in_time', { ascending: false })
-      .limit(limit);
+    const today = date === 'TODAY' ? await getClubToday({ timeZone }) : null;
 
-    if (date === 'TODAY') {
-      // Filtered on the stored club-local date, not on the timestamp, so the
-      // log is correct regardless of where the browser thinks it is.
-      const today = await getClubToday({ timeZone });
-      query = query.eq('attendance_date', today);
+    const run = (columns) => {
+      let query = supabase
+        .from('attendance')
+        .select(columns)
+        .order('check_in_time', { ascending: false })
+        .limit(limit);
+
+      if (date === 'TODAY') {
+        // Filtered on the stored club-local date, not on the timestamp, so the
+        // log is correct regardless of where the browser thinks it is.
+        query = query.eq('attendance_date', today);
+      }
+
+      return query;
+    };
+
+    let { data, error } = await run(ATTENDANCE_SELECT);
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await run(ATTENDANCE_SELECT_LEGACY));
     }
-
-    const { data, error } = await query;
     if (error) throw toMessage(error);
 
     const logs = (data || []).map(withMember);
@@ -200,18 +249,29 @@ export const attendanceService = {
   async getMemberAttendance({ memberId, from = null, to = null, limit = 1000 } = {}) {
     if (!memberId) return [];
 
-    let query = supabase
-      .from('attendance')
-      .select('id, attendance_date, check_in_time, check_out_time, method, notes')
-      .eq('member_id', memberId)
-      .order('attendance_date', { ascending: false })
-      .limit(limit);
+    const MEMBER_COLUMNS =
+      'id, attendance_date, check_in_time, check_out_time, checkout_method, method, notes';
+    const MEMBER_COLUMNS_LEGACY =
+      'id, attendance_date, check_in_time, check_out_time, method, notes';
 
-    // Both bounds are inclusive club-local dates.
-    if (from) query = query.gte('attendance_date', from);
-    if (to) query = query.lte('attendance_date', to);
+    const run = (columns) => {
+      let query = supabase
+        .from('attendance')
+        .select(columns)
+        .eq('member_id', memberId)
+        .order('attendance_date', { ascending: false })
+        .limit(limit);
 
-    const { data, error } = await query;
+      // Both bounds are inclusive club-local dates.
+      if (from) query = query.gte('attendance_date', from);
+      if (to) query = query.lte('attendance_date', to);
+      return query;
+    };
+
+    let { data, error } = await run(MEMBER_COLUMNS);
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await run(MEMBER_COLUMNS_LEGACY));
+    }
     if (error) throw toMessage(error);
     return data || [];
   },
@@ -226,13 +286,18 @@ export const attendanceService = {
   async getAttendanceForDate({ date, limit = 500 } = {}) {
     if (!date) return [];
 
-    const { data, error } = await supabase
-      .from('attendance')
-      .select(ATTENDANCE_SELECT)
-      .eq('attendance_date', date)
-      .order('check_in_time', { ascending: true })
-      .limit(limit);
+    const run = (columns) =>
+      supabase
+        .from('attendance')
+        .select(columns)
+        .eq('attendance_date', date)
+        .order('check_in_time', { ascending: true })
+        .limit(limit);
 
+    let { data, error } = await run(ATTENDANCE_SELECT);
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await run(ATTENDANCE_SELECT_LEGACY));
+    }
     if (error) throw toMessage(error);
     return (data || []).map(withMember);
   },
@@ -247,39 +312,10 @@ export const attendanceService = {
       };
     }
 
-    if (member.status !== 'Active') {
-      return {
-        success: false,
-        member,
-        error: `Access denied - ${member.full_name} is marked "${member.status}". Renew the membership first.`,
-      };
-    }
-
-    // An end_date is inclusive: a membership ending today is still valid for
-    // the whole of that day. Comparing dates as keys in the club's zone avoids
-    // both the UTC-midnight trap and the browser's own timezone.
     const today = await getClubToday({ timeZone });
-    if (member.expiration_date && toDateKey(member.expiration_date) < today) {
-      return {
-        success: false,
-        member,
-        error: `Access denied - the membership for ${member.full_name} expired on ${member.expiration_date}.`,
-      };
-    }
-
-    // Final authority, shared with the gym card and the dashboard: an OPEN
-    // subscription (Active or Expiring) whose dates actually cover today.
-    //
-    // The two checks above stay because they produce the more specific message
-    // for the two most common cases, and because evaluateMembershipAdmission
-    // repeats them as a safety net rather than trusting this function's ordering.
-    const admission = evaluateMembershipAdmission(member, today);
-    if (!admission.allowed) {
-      return {
-        success: false,
-        member,
-        error: `Access denied - ${admission.detail}`,
-      };
+    const refusal = membershipRefusal(member, today);
+    if (refusal) {
+      return { success: false, member, error: refusal };
     }
 
     const result = await this.recordCheckIn(member.id, method);
@@ -290,11 +326,127 @@ export const attendanceService = {
     // a flag, not as an error.
     return {
       success: true,
+      action: 'IN',
       alreadyCheckedIn: result.alreadyCheckedIn,
       member,
       attendance: result.attendance,
       date: today,
     };
+  },
+
+  /**
+   * One scan at the door, resolved into a check-in, a check-out, or a welcome
+   * back, without the member or staff pressing anything.
+   *
+   * The day's row holds the first arrival and the latest departure, so the
+   * scan is a toggle:
+   *
+   *   no session today        -> check in  (action 'IN')
+   *   session open            -> check out (action 'OUT')
+   *   session already closed  -> reopen    (action 'IN', reentry: true)
+   *
+   * Leaving is never gated on membership: a member whose plan lapsed during
+   * the day must still be able to close their session. Only the arrival side
+   * runs the admission checks.
+   */
+  async toggleAttendance(passValue, method = 'QR_SCAN', { timeZone } = {}) {
+    const member = await memberService.getMemberByPass(passValue);
+    if (!member) {
+      return {
+        success: false,
+        error: 'No member matches that code. Check the QR pass or member ID.',
+      };
+    }
+
+    const today = await getClubToday({ timeZone });
+    const session = await this.getTodaySession(member.id, { timeZone, today });
+
+    // Open session: this scan is a departure.
+    if (session && !session.check_out_time) {
+      const result = await this.recordCheckOut(session.id, method);
+      if (result.error) throw toMessage(result.error, 'Could not record the check-out.');
+      return {
+        success: true,
+        action: 'OUT',
+        member,
+        attendance: result.attendance,
+        date: today,
+      };
+    }
+
+    // Arrival (first of the day, or back after an earlier check-out), so the
+    // membership rules apply.
+    const refusal = membershipRefusal(member, today);
+    if (refusal) {
+      return { success: false, member, error: refusal };
+    }
+
+    if (session && session.check_out_time) {
+      const result = await this.recordReentry(session.id);
+      if (result.error) throw toMessage(result.error, 'Could not record the check-in.');
+      return {
+        success: true,
+        action: 'IN',
+        reentry: true,
+        member,
+        attendance: result.attendance,
+        date: today,
+      };
+    }
+
+    const result = await this.recordCheckIn(member.id, method);
+    if (result.error) throw toMessage(result.error, 'Could not record the check-in.');
+
+    return {
+      success: true,
+      action: 'IN',
+      alreadyCheckedIn: result.alreadyCheckedIn,
+      member,
+      attendance: result.attendance,
+      date: today,
+    };
+  },
+
+  /**
+   * Today's attendance row for one member, or null.
+   *
+   * The daily unique index guarantees at most one row; the order + limit keep
+   * maybeSingle() from erroring on a pre-migration database that still holds
+   * duplicates.
+   */
+  async getTodaySession(memberId, { timeZone, today } = {}) {
+    if (!memberId) return null;
+
+    const date = today || (await getClubToday({ timeZone }));
+
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('id, attendance_date, check_in_time, check_out_time, method, checkout_method')
+      .eq('member_id', memberId)
+      .eq('attendance_date', date)
+      .order('check_in_time', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      // checkout_method may not exist yet; retry without it rather than
+      // failing the whole scan.
+      if (!isMissingColumn(error)) throw toMessage(error);
+
+      const legacy = await supabase
+        .from('attendance')
+        .select('id, attendance_date, check_in_time, check_out_time, method')
+        .eq('member_id', memberId)
+        .eq('attendance_date', date)
+        .order('check_in_time', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (legacy.error) throw toMessage(legacy.error);
+      return legacy.data || null;
+    }
+
+    return data || null;
   },
 
   /**
@@ -364,14 +516,111 @@ export const attendanceService = {
     return { attendance: null, alreadyCheckedIn: false, error };
   },
 
-  async checkout(attendanceId) {
-    const { error } = await supabase
+  /**
+   * Closes an open session by id. Used by the manual check-out button on the
+   * attendance screen, where the actor is staff at the desk, so the default
+   * method is MANUAL_ENTRY.
+   *
+   * The `.is('check_out_time', null)` guard makes a double click (or two staff
+   * at once) close the session only once: the second update matches no row.
+   */
+  async checkout(attendanceId, method = 'MANUAL_ENTRY') {
+    if (!attendanceId) throw new Error('No attendance row given.');
+
+    let { data, error } = await supabase
       .from('attendance')
-      .update({ check_out_time: new Date().toISOString() })
-      .eq('id', attendanceId);
+      .update({ check_out_time: new Date().toISOString(), checkout_method: method })
+      .eq('id', attendanceId)
+      .is('check_out_time', null)
+      .select('id, attendance_date, check_in_time, check_out_time, method, checkout_method')
+      .maybeSingle();
+
+    // A pre-phase-7 database has no checkout_method column; retry without it so
+    // the manual close still works.
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await supabase
+        .from('attendance')
+        .update({ check_out_time: new Date().toISOString() })
+        .eq('id', attendanceId)
+        .is('check_out_time', null)
+        .select('id, attendance_date, check_in_time, check_out_time, method')
+        .maybeSingle());
+    }
 
     if (error) throw toMessage(error);
-    return true;
+
+    // No row matched: it was already closed. Not an error for the desk.
+    if (!data) return { alreadyClosed: true, attendance: null };
+    return { alreadyClosed: false, attendance: data };
+  },
+
+  /**
+   * Closes today's open session, returning the row and how long the member
+   * stayed. Delegates to checkout() so the guard and the method are shared.
+   */
+  async recordCheckOut(attendanceId, method = 'QR_SCAN') {
+    try {
+      const result = await this.checkout(attendanceId, method);
+      if (result.alreadyClosed) {
+        return { attendance: null, error: { message: 'That session was already closed.' } };
+      }
+      return { attendance: result.attendance, error: null };
+    } catch (err) {
+      return { attendance: null, error: err };
+    }
+  },
+
+  /**
+   * Reopens a session the member already closed earlier today.
+   *
+   * The check-in time is deliberately left alone: the day's row keeps the
+   * FIRST arrival and takes the NEXT departure, so "time spent" measures the
+   * whole span they were at the club rather than only the last visit.
+   */
+  async recordReentry(attendanceId) {
+    if (!attendanceId) return { attendance: null, error: { message: 'No attendance row given.' } };
+
+    let { data, error } = await supabase
+      .from('attendance')
+      .update({ check_out_time: null, checkout_method: null })
+      .eq('id', attendanceId)
+      .select('id, attendance_date, check_in_time, check_out_time, method, checkout_method')
+      .maybeSingle();
+
+    if (error && isMissingColumn(error)) {
+      ({ data, error } = await supabase
+        .from('attendance')
+        .update({ check_out_time: null })
+        .eq('id', attendanceId)
+        .select('id, attendance_date, check_in_time, check_out_time, method')
+        .maybeSingle());
+    }
+
+    if (error) return { attendance: null, error };
+    return { attendance: data || null, error: null };
+  },
+
+  /**
+   * Closes every session left open on a previous club-local day, at the club's
+   * closing time, and flags those rows AUTO_CLOSE (phase 7).
+   *
+   * Backed by public.close_forgotten_attendance(), which keeps the whole sweep
+   * in one statement inside the database so the club timezone and the closing
+   * time are applied there, not by whichever browser is open. On a database
+   * where phase 7 has not been applied the function is simply missing, and the
+   * screen carries on: nothing to tidy yet.
+   */
+  async closeForgottenSessions() {
+    const { data, error } = await supabase.rpc('close_forgotten_attendance');
+
+    if (!error) return { closed: Number(data) || 0, skipped: false };
+
+    // 42883 undefined_function / PGRST202: phase 7 not applied yet.
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      return { closed: 0, skipped: true };
+    }
+
+    throw toMessage(error);
   },
 
   /**

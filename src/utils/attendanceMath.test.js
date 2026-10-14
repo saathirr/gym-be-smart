@@ -9,10 +9,12 @@ import {
   effectiveStartDate,
   enumerateDays,
   firstCheckInLabel,
+  formatDuration,
   isValidDateKey,
   listMonths,
   monthBounds,
   monthLabel,
+  sessionMinutes,
   toDateKey,
   todayKey,
   getClubHour,
@@ -667,6 +669,56 @@ describe('buildMonthSummary - current month, member joined mid-month', () => {
       '2026-09-13 Leave',
       '2026-09-14 Leave',
     ]);
+  });
+});
+
+describe('sessionMinutes / formatDuration', () => {
+  it('measures whole minutes between an arrival and a departure', () => {
+    // A duration is the same number of minutes wherever it is read, so unlike
+    // the date helpers this takes no timezone.
+    expect(
+      sessionMinutes('2026-03-14T01:00:00.000Z', '2026-03-14T02:20:00.000Z')
+    ).toBe(80);
+  });
+
+  it('is null while the session is still open', () => {
+    expect(sessionMinutes('2026-03-14T01:00:00.000Z', null)).toBeNull();
+    expect(formatDuration('2026-03-14T01:00:00.000Z', null)).toBeNull();
+  });
+
+  it('is null for a departure before the arrival, rather than negative', () => {
+    expect(
+      sessionMinutes('2026-03-14T02:00:00.000Z', '2026-03-14T01:00:00.000Z')
+    ).toBeNull();
+  });
+
+  it('formats hours and minutes together', () => {
+    expect(
+      formatDuration('2026-03-14T01:00:00.000Z', '2026-03-14T02:20:00.000Z')
+    ).toBe('1h 20m');
+  });
+
+  it('drops the minutes at a whole hour and at under an hour', () => {
+    expect(
+      formatDuration('2026-03-14T01:00:00.000Z', '2026-03-14T03:00:00.000Z')
+    ).toBe('2h');
+    expect(
+      formatDuration('2026-03-14T01:00:00.000Z', '2026-03-14T01:45:00.000Z')
+    ).toBe('45m');
+  });
+
+  it('describes a sub-minute session instead of showing "0m"', () => {
+    // "0m" would read as a failed scan, so the shortest real visit is named.
+    expect(
+      formatDuration('2026-03-14T01:00:00.000Z', '2026-03-14T01:00:20.000Z')
+    ).toBe('under a minute');
+  });
+
+  it('treats an auto-closed session at closing time as the full span', () => {
+    // An arrival at 18:00 closed at 22:00 by the migration is four hours.
+    expect(
+      formatDuration('2026-03-14T12:30:00.000Z', '2026-03-14T16:30:00.000Z')
+    ).toBe('4h');
   });
 });
 

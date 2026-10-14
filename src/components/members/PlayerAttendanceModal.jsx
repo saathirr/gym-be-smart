@@ -7,7 +7,7 @@ import { Button } from '../ui/Button';
 import { MemberAttendanceHistory } from './MemberAttendanceHistory';
 import { attendanceService, getClubToday } from '../../services/attendanceService';
 import { memberService } from '../../services/memberService';
-import { toDateKey, formatTimestamp, weekdayLabel } from '../../utils/attendanceMath';
+import { toDateKey, formatDuration, formatTimestamp, weekdayLabel } from '../../utils/attendanceMath';
 import { useGym } from '../../hooks/useGym';
 
 export function PlayerAttendanceModal({
@@ -193,7 +193,15 @@ export function PlayerAttendanceModal({
                             <Clock className="w-3 h-3 text-slate-500" />
                             {log.check_in_time ? formatTimestamp(log.check_in_time, timeZone) : 'Check-in time recorded'}
                             {log.check_out_time ? ` · out ${formatTimestamp(log.check_out_time, timeZone)}` : ''}
+                            {log.check_out_time
+                              ? ` · ${formatDuration(log.check_in_time, log.check_out_time)}`
+                              : ' · still in'}
                           </p>
+                          {log.checkout_method === 'AUTO_CLOSE' && (
+                            <p className="text-[10px] text-amber-400 mt-0.5">
+                              No checkout scan — closed at closing time
+                            </p>
+                          )}
                         </div>
                       </div>
 

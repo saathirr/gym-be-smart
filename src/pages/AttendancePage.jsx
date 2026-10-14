@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CalendarCheck,
@@ -19,6 +19,7 @@ import { Modal } from '../components/ui/Modal';
 import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
 import { attendanceService } from '../services/attendanceService';
 import { formatDate } from '../utils/formatters';
+import { formatDuration } from '../utils/attendanceMath';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
 import { toMessage } from '../lib/supabaseErrors';
@@ -49,10 +50,21 @@ export function AttendancePage() {
   // with the scanner and the dashboard about who is in the building.
   const timeZone = settings?.timezone;
 
+  // The forgotten-check-out sweep runs once per visit, before the first fetch,
+  // so last night's open sessions are already closed and flagged by the time
+  // the table is drawn. A failure here is not fatal: the list simply shows the
+  // sessions as still open.
+  const sweptRef = useRef(false);
+
   const loadLogs = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
+
+      if (!sweptRef.current) {
+        sweptRef.current = true;
+        await attendanceService.closeForgottenSessions().catch(() => {});
+      }
 
       const [logRows, count] = await Promise.all([
         attendanceService.getAttendanceLogs({ search, date: dateRange, timeZone }),
@@ -113,7 +125,7 @@ export function AttendancePage() {
     <div className="space-y-6">
       <PageHeader
         title="Attendance"
-        description="Check-in audit trail from QR scans and manual desk entry."
+        description="Check-in and check-out audit trail from QR scans and manual desk entry."
       >
         <Button variant="secondary" icon={Plus} onClick={() => setIsManualModalOpen(true)}>
           Manual check-in
@@ -180,6 +192,7 @@ export function AttendancePage() {
                 <th className="py-3.5 px-4">Code</th>
                 <th className="py-3.5 px-4">Plan</th>
                 <th className="py-3.5 px-4">Check-in</th>
+                <th className="py-3.5 px-4">Time spent</th>
                 <th className="py-3.5 px-4">Method</th>
                 <th className="py-3.5 px-4">Result</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
@@ -188,13 +201,13 @@ export function AttendancePage() {
             <tbody className="divide-y divide-hairline text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">
+                  <td colSpan="8" className="text-center py-8 text-slate-400">
                     Loading attendance...
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-slate-400">
+                  <td colSpan="8" className="text-center py-8 text-slate-400">
                     {search
                       ? `No check-ins match "${search}".`
                       : 'No check-ins recorded yet.'}
@@ -221,6 +234,25 @@ export function AttendancePage() {
                       {log.check_out_time && (
                         <span className="block text-[10px] text-emerald-400">
                           out {formatDate(log.check_out_time, 'hh:mm a')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {log.check_out_time ? (
+                        <div>
+                          <span className="font-medium text-slate-200">
+                            {formatDuration(log.check_in_time, log.check_out_time)}
+                          </span>
+                          {log.checkout_method === 'AUTO_CLOSE' && (
+                            <span className="block text-[10px] text-amber-400">
+                              no checkout
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Still in
                         </span>
                       )}
                     </td>
