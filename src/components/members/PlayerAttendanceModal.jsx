@@ -7,7 +7,7 @@ import { Button } from '../ui/Button';
 import { MemberAttendanceHistory } from './MemberAttendanceHistory';
 import { attendanceService, getClubToday } from '../../services/attendanceService';
 import { memberService } from '../../services/memberService';
-import { toDateKey, formatDuration, formatTimestamp, weekdayLabel } from '../../utils/attendanceMath';
+import { toDateKey, formatMinutes, formatTimestamp, weekdayLabel } from '../../utils/attendanceMath';
 import { useGym } from '../../hooks/useGym';
 
 export function PlayerAttendanceModal({
@@ -176,6 +176,22 @@ export function PlayerAttendanceModal({
                   const dateStr = log.attendance_date || toDateKey(log.check_in_time, timeZone);
                   const dayName = weekdayLabel(dateStr, { short: false });
 
+                  const session1 = [
+                    `in ${formatTimestamp(log.check_in_time, timeZone)}`,
+                    log.check_out_time ? `out ${formatTimestamp(log.check_out_time, timeZone)}` : 'still in',
+                  ].join(' · ');
+                  const session2 = log.second_check_in_time
+                    ? [
+                        `2nd in ${formatTimestamp(log.second_check_in_time, timeZone)}`,
+                        log.second_check_out_time
+                          ? `out ${formatTimestamp(log.second_check_out_time, timeZone)}`
+                          : 'still in',
+                      ].join(' · ')
+                    : null;
+                  const total = log.duration_minutes != null ? formatMinutes(log.duration_minutes) : null;
+                  const autoClosed =
+                    log.checkout_method === 'AUTO_CLOSE' || log.second_checkout_method === 'AUTO_CLOSE';
+
                   return (
                     <div
                       key={log.id || log.check_in_time}
@@ -191,13 +207,21 @@ export function PlayerAttendanceModal({
                           </p>
                           <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                             <Clock className="w-3 h-3 text-slate-500" />
-                            {log.check_in_time ? formatTimestamp(log.check_in_time, timeZone) : 'Check-in time recorded'}
-                            {log.check_out_time ? ` · out ${formatTimestamp(log.check_out_time, timeZone)}` : ''}
-                            {log.check_out_time
-                              ? ` · ${formatDuration(log.check_in_time, log.check_out_time)}`
-                              : ' · still in'}
+                            {session1}
                           </p>
-                          {log.checkout_method === 'AUTO_CLOSE' && (
+                          {session2 && (
+                            <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              {session2}
+                            </p>
+                          )}
+                          {total && (
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Total {total}
+                              {log.open_session ? ' so far' : ''}
+                            </p>
+                          )}
+                          {autoClosed && (
                             <p className="text-[10px] text-amber-400 mt-0.5">
                               No checkout scan — closed at closing time
                             </p>

@@ -103,7 +103,7 @@ export function DashboardLayout() {
 
       <aside
         className={cn(
- 'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r flex flex-col transition-transform duration-300 lg:static lg:translate-x-0',
+ 'fixed inset-y-0 left-0 z-50 w-64 bg-gym-900 border-r flex flex-col transition-transform duration-300 lg:sticky lg:top-0 lg:bottom-auto lg:h-screen lg:translate-x-0',
  sidebarOpen ? 'translate-x-0' : '-translate-x-full'
  )}
       >

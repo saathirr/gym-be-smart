@@ -447,15 +447,14 @@ export function sessionMinutes(checkIn, checkOut) {
   return Math.round((endMs - startMs) / 60000);
 }
 
-// "1h 20m" / "45m" / "under a minute", or null while the session is open.
+// "1h 20m" / "45m" / "under a minute", or null when there is no duration.
 //
 // Rounded to whole minutes on purpose: a duration that reads "1h 20m" is what
 // a member repeats back, and seconds would only add noise to a front-desk
 // screen. Anything under a minute is described rather than shown as "0m",
 // which would look like the scan had failed.
-export function formatDuration(checkIn, checkOut) {
-  const minutes = sessionMinutes(checkIn, checkOut);
-  if (minutes === null) return null;
+export function formatMinutes(minutes) {
+  if (minutes === null || minutes === undefined) return null;
   if (minutes < 1) return 'under a minute';
 
   const hours = Math.floor(minutes / 60);
@@ -464,6 +463,36 @@ export function formatDuration(checkIn, checkOut) {
   if (hours && mins) return `${hours}h ${mins}m`;
   if (hours) return `${hours}h`;
   return `${mins}m`;
+}
+
+export function formatDuration(checkIn, checkOut) {
+  return formatMinutes(sessionMinutes(checkIn, checkOut));
+}
+
+// The day's total across its sessions (a member may train twice), counting only
+// the sessions that have actually ended. A still-open session contributes
+// nothing yet, so null is returned until at least one is closed - the same
+// "not measured yet" signal sessionMinutes uses for a single pair.
+//
+// `sessions` accepts either { checkIn, checkOut } or the raw row field names
+// { check_in_time, check_out_time } so a caller can pass attendance rows
+// straight through without re-shaping them.
+export function totalSessionMinutes(sessions = []) {
+  let total = 0;
+  let measured = false;
+
+  for (const session of sessions || []) {
+    if (!session) continue;
+    const minutes = sessionMinutes(
+      session.checkIn ?? session.check_in_time,
+      session.checkOut ?? session.check_out_time
+    );
+    if (minutes === null) continue;
+    total += minutes;
+    measured = true;
+  }
+
+  return measured ? total : null;
 }
 
 export function formatTimestamp(value, timeZone = DEFAULT_CLUB_TIMEZONE) {

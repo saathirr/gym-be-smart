@@ -19,7 +19,7 @@ import { Modal } from '../components/ui/Modal';
 import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
 import { attendanceService } from '../services/attendanceService';
 import { formatDate } from '../utils/formatters';
-import { formatDuration } from '../utils/attendanceMath';
+import { formatMinutes } from '../utils/attendanceMath';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
 import { toMessage } from '../lib/supabaseErrors';
@@ -28,6 +28,21 @@ const DATE_RANGES = [
   ['TODAY', 'Today'],
   ['ALL', 'All time'],
 ];
+
+// One line describing what a manual entry just did, so the same form covers a
+// check-in, a check-out, a second session and a refusal.
+function manualResultMessage(result) {
+  if (!result) return '';
+  if (!result.success) return result.error;
+
+  const who = `${result.member?.full_name} (${result.member?.member_code})`;
+  if (result.action === 'OUT') {
+    return `Checked out ${who}. Session ${result.session} closed.`;
+  }
+  if (result.reentry) return `Checked in ${who} for the second session.`;
+  if (result.alreadyCheckedIn) return `${who} is already checked in today.`;
+  return `Checked in ${who}.`;
+}
 
 export function AttendancePage() {
   const [logs, setLogs] = useState([]);
@@ -88,19 +103,23 @@ export function AttendancePage() {
 
   const handleManualCheckIn = async (e) => {
     e.preventDefault();
-    if (!manualCode.trim()) return;
+    const code = manualCode.trim();
+    if (!code || submitting) return;
 
     try {
       setSubmitting(true);
-      const result = await attendanceService.logCheckIn(manualCode, 'MANUAL_ENTRY');
+      // Same toggle as the scanner, so a manual entry can check in, check out,
+      // start the second session, or be refused once both are complete.
+      const result = await attendanceService.toggleAttendance(code, 'MANUAL_ENTRY', {
+        timeZone,
+      });
       setFeedback(result);
-
       if (result.success) {
         setManualCode('');
         await loadLogs();
       }
     } catch (err) {
-      setFeedback({ success: false, error: toMessage(err, 'Check-in failed.') });
+      setFeedback({ success: false, error: toMessage(err, 'Could not record that entry.') });
     } finally {
       setSubmitting(false);
     }
@@ -108,7 +127,14 @@ export function AttendancePage() {
 
   const handleCheckout = async (log) => {
     try {
-      await attendanceService.checkout(log.id);
+      // Close whichever session is still open. The second is checked first
+      // because a row can only hold two sessions, and only one is ever open.
+      const openSession = log.open_session || (log.second_check_in_time ? 2 : 1);
+      if (openSession === 2) {
+        await attendanceService.checkoutSecond(log.id, 'MANUAL_ENTRY');
+      } else {
+        await attendanceService.checkout(log.id, 'MANUAL_ENTRY');
+      }
       await loadLogs();
     } catch (err) {
       setError(toMessage(err, 'Could not close that session.'));
@@ -128,7 +154,7 @@ export function AttendancePage() {
         description="Check-in and check-out audit trail from QR scans and manual desk entry."
       >
         <Button variant="secondary" icon={Plus} onClick={() => setIsManualModalOpen(true)}>
-          Manual check-in
+          Manual entry
         </Button>
         <Button variant="emerald" icon={QrCode} onClick={() => navigate('/qr-scanner')}>
           Open scanner
@@ -230,30 +256,49 @@ export function AttendancePage() {
                     <td className="py-3.5 px-4 font-mono text-brand-cyan">{log.member_code}</td>
                     <td className="py-3.5 px-4 text-slate-300">{log.plan_name}</td>
                     <td className="py-3.5 px-4 text-slate-400">
-                      {formatDate(log.check_in_time, 'MMM dd, yyyy • hh:mm a')}
+                      <div>{formatDate(log.check_in_time, 'MMM dd, yyyy • hh:mm a')}</div>
                       {log.check_out_time && (
                         <span className="block text-[10px] text-emerald-400">
                           out {formatDate(log.check_out_time, 'hh:mm a')}
                         </span>
                       )}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {log.check_out_time ? (
-                        <div>
-                          <span className="font-medium text-slate-200">
-                            {formatDuration(log.check_in_time, log.check_out_time)}
+                      {log.second_check_in_time && (
+                        <div className="mt-1 pt-1 border-t border-hairline/50">
+                          <span className="block text-[10px] text-sky-400">
+                            2nd in {formatDate(log.second_check_in_time, 'hh:mm a')}
                           </span>
-                          {log.checkout_method === 'AUTO_CLOSE' && (
-                            <span className="block text-[10px] text-amber-400">
-                              no checkout
+                          {log.second_check_out_time && (
+                            <span className="block text-[10px] text-emerald-400">
+                              2nd out {formatDate(log.second_check_out_time, 'hh:mm a')}
                             </span>
                           )}
                         </div>
-                      ) : (
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {log.duration_minutes != null ? (
+                        <div>
+                          <span className="font-medium text-slate-200">
+                            {formatMinutes(log.duration_minutes)}
+                          </span>
+                          {log.open_session ? (
+                            <span className="block text-[10px] text-emerald-400">
+                              + still in
+                            </span>
+                          ) : (
+                            (log.checkout_method === 'AUTO_CLOSE' ||
+                              log.second_checkout_method === 'AUTO_CLOSE') && (
+                              <span className="block text-[10px] text-amber-400">no checkout</span>
+                            )
+                          )}
+                        </div>
+                      ) : log.open_session ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           Still in
                         </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
                       )}
                     </td>
                     <td className="py-3.5 px-4">
@@ -281,7 +326,7 @@ export function AttendancePage() {
                           <CalendarDays className="w-4 h-4" />
                         </button>
                       )}
-                      {!log.check_out_time ? (
+                      {log.open_session ? (
                         <button
                           onClick={() => handleCheckout(log)}
                           className="p-1.5 rounded-lg bg-gym-800 hover:bg-brand-emerald hover:text-white text-slate-300 transition"
@@ -304,7 +349,7 @@ export function AttendancePage() {
       <Modal
         isOpen={isManualModalOpen}
         onClose={closeModal}
-        title="Manual check-in"
+        title="Manual entry"
       >
         {feedback && (
           <div
@@ -319,11 +364,7 @@ export function AttendancePage() {
             ) : (
               <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
             )}
-            <span>
-              {feedback.success
-                ? `Checked in ${feedback.member?.full_name} (${feedback.member?.member_code}).`
-                : feedback.error}
-            </span>
+            <span>{manualResultMessage(feedback)}</span>
           </div>
         )}
 
@@ -346,7 +387,7 @@ export function AttendancePage() {
               icon={CalendarCheck}
               disabled={submitting}
             >
-              {submitting ? 'Checking...' : 'Log check-in'}
+              {submitting ? 'Recording...' : 'Record'}
             </Button>
           </div>
         </form>

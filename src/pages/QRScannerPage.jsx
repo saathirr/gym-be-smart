@@ -11,6 +11,7 @@ import {
   ImagePlus,
   LogOut,
   DoorOpen,
+  Ban,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { CameraStatusOverlay } from '../components/common/CameraStatusOverlay';
@@ -22,7 +23,12 @@ import { Avatar } from '../components/members/MemberPhoto';
 import { attendanceService } from '../services/attendanceService';
 import { useGym } from '../hooks/useGym';
 import { useMemberPhotoUrls } from '../hooks/useMemberPhotoUrls';
-import { firstCheckInLabel, formatDuration, formatTimestamp } from '../utils/attendanceMath';
+import {
+  firstCheckInLabel,
+  formatMinutes,
+  formatTimestamp,
+  totalSessionMinutes,
+} from '../utils/attendanceMath';
 import {
   cameraOptionLabel,
   describeCameraError,
@@ -250,22 +256,42 @@ export function QRScannerPage() {
     await submitPayload(code, 'MANUAL_ENTRY');
   };
 
-  // On a repeat scan the service returns the original row for the day, so this
-  // time is the first check-in either way.
-  const resultCheckInTime = scanResult?.success
-    ? firstCheckInLabel(
-        scanResult.attendance?.check_in_time ? [scanResult.attendance.check_in_time] : [],
-        timeZone
-      )
-    : null;
+  // The arrival time this scan relates to: the second session's arrival once
+  // the day has moved past the first, otherwise the first.
+  const arrivalForSession = (attendance, session) =>
+    session === 2 ? attendance?.second_check_in_time : attendance?.check_in_time;
+
+  const resultCheckInTime = firstCheckInLabel(
+    arrivalForSession(scanResult?.attendance, scanResult?.session)
+      ? [arrivalForSession(scanResult.attendance, scanResult.session)]
+      : [],
+    timeZone
+  );
 
   // What the scan actually did. A check-out is the same result shape as a
-  // check-in, only the action differs, so the screen can stay one modal.
+  // check-in, only the action differs, so the screen can stay one modal. A
+  // member may train twice, so `session` says which visit this scan touched.
   const isCheckout = Boolean(scanResult?.success) && scanResult?.action === 'OUT';
   const isReentry = Boolean(scanResult?.success) && scanResult?.reentry;
-  const resultDuration = scanResult?.success
-    ? formatDuration(scanResult.attendance?.check_in_time, scanResult.attendance?.check_out_time)
+  const isBlocked = Boolean(scanResult) && !scanResult?.success && scanResult?.limitReached;
+  const sessionNumber = scanResult?.session || 1;
+
+  // The day's time so far: the sum of both sessions, so a check-out of the
+  // second visit reports the two visits added together.
+  const resultAttendance = scanResult?.attendance;
+  const resultDuration = resultAttendance
+    ? formatMinutes(
+        totalSessionMinutes([
+          { checkIn: resultAttendance.check_in_time, checkOut: resultAttendance.check_out_time },
+          {
+            checkIn: resultAttendance.second_check_in_time,
+            checkOut: resultAttendance.second_check_out_time,
+          },
+        ])
+      )
     : null;
+  const resultDeparture = (attendance, session) =>
+    session === 2 ? attendance?.second_check_out_time : attendance?.check_out_time;
 
   // The photo on the result screen, so staff confirm the face and not just the
   // name. Signed in one batched request by the same hook the members list uses;
@@ -444,7 +470,7 @@ export function QRScannerPage() {
             <ul className="text-xs text-slate-400 space-y-2.5">
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-brand-emerald shrink-0 mt-1" />
-                First scan of the day checks the member in
+                First scan checks the member in (session 1)
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0 mt-1" />
@@ -452,7 +478,12 @@ export function QRScannerPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0 mt-1" />
-                Scanning after a check-out checks them back in for the day
+                A member may train twice: the next scan starts session 2, the one
+                after that closes it
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0 mt-1" />
+                A third visit is refused - both sessions are already complete
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-1" />
@@ -486,7 +517,11 @@ export function QRScannerPage() {
               }`}
             >
               {!scanResult.success ? (
-                <AlertTriangle className="w-12 h-12" />
+                isBlocked ? (
+                  <Ban className="w-12 h-12" />
+                ) : (
+                  <AlertTriangle className="w-12 h-12" />
+                )
               ) : isCheckout ? (
                 <LogOut className="w-12 h-12" />
               ) : (
@@ -507,7 +542,9 @@ export function QRScannerPage() {
 
               <h3 className="text-xl font-bold text-slate-100">
                 {!scanResult.success
-                  ? 'Access denied'
+                  ? isBlocked
+                    ? 'Daily limit reached'
+                    : 'Access denied'
                   : isCheckout
                     ? 'Checked out'
                     : isReentry
@@ -519,6 +556,11 @@ export function QRScannerPage() {
               {scanResult.member && (
                 <p className="text-sm font-semibold text-brand-cyan mt-1">
                   {scanResult.member.full_name} ({scanResult.member.member_code})
+                </p>
+              )}
+              {scanResult.success && (
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 mt-1 font-semibold">
+                  {sessionNumber === 2 ? 'Session 2 of 2' : 'Session 1 of 2'}
                 </p>
               )}
               <p className="text-xs text-slate-300 mt-2">
@@ -539,7 +581,7 @@ export function QRScannerPage() {
                   <p className="text-lg font-bold text-sky-300">{resultDuration || 'recorded'}</p>
                   <p className="text-[11px] text-slate-400 mt-1">
                     In {resultCheckInTime || 'earlier'} • out{' '}
-                    {formatTimestamp(scanResult.attendance?.check_out_time, timeZone)}
+                    {formatTimestamp(resultDeparture(resultAttendance, sessionNumber), timeZone)}
                   </p>
                 </div>
               )}
@@ -554,9 +596,17 @@ export function QRScannerPage() {
                       </span>
                       . This scan did not add a second record.
                     </>
+                  ) : isReentry ? (
+                    <>
+                      Second session started at{' '}
+                      <span className="text-slate-200 font-medium">
+                        {resultCheckInTime || 'now'}
+                      </span>
+                      . Time spent counts both visits.
+                    </>
                   ) : (
                     <>
-                      {isReentry ? 'Checked in again at ' : 'Checked in at '}
+                      Checked in at{' '}
                       <span className="text-slate-200 font-medium">
                         {resultCheckInTime || 'now'}
                       </span>{' '}

@@ -10,11 +10,13 @@ import {
   enumerateDays,
   firstCheckInLabel,
   formatDuration,
+  formatMinutes,
   isValidDateKey,
   listMonths,
   monthBounds,
   monthLabel,
   sessionMinutes,
+  totalSessionMinutes,
   toDateKey,
   todayKey,
   getClubHour,
@@ -719,6 +721,60 @@ describe('sessionMinutes / formatDuration', () => {
     expect(
       formatDuration('2026-03-14T12:30:00.000Z', '2026-03-14T16:30:00.000Z')
     ).toBe('4h');
+  });
+});
+
+describe('formatMinutes', () => {
+  it('names the unit instead of printing a bare number', () => {
+    expect(formatMinutes(80)).toBe('1h 20m');
+    expect(formatMinutes(120)).toBe('2h');
+    expect(formatMinutes(45)).toBe('45m');
+  });
+
+  it('describes a sub-minute duration rather than showing "0m"', () => {
+    expect(formatMinutes(0)).toBe('under a minute');
+  });
+
+  it('is null when there is nothing measured yet', () => {
+    expect(formatMinutes(null)).toBeNull();
+    expect(formatMinutes(undefined)).toBeNull();
+  });
+});
+
+describe('totalSessionMinutes - a day with up to two sessions', () => {
+  it('sums both closed sessions', () => {
+    expect(
+      totalSessionMinutes([
+        { checkIn: '2026-03-14T01:00:00.000Z', checkOut: '2026-03-14T02:00:00.000Z' },
+        { checkIn: '2026-03-14T10:00:00.000Z', checkOut: '2026-03-14T10:30:00.000Z' },
+      ])
+    ).toBe(90);
+  });
+
+  it('reads the raw attendance row field names too', () => {
+    expect(
+      totalSessionMinutes([
+        { check_in_time: '2026-03-14T01:00:00.000Z', check_out_time: '2026-03-14T02:20:00.000Z' },
+      ])
+    ).toBe(80);
+  });
+
+  it('counts only the sessions that have ended', () => {
+    // The second visit is still open, so only the first contributes - and the
+    // day is measured, not "unknown".
+    expect(
+      totalSessionMinutes([
+        { checkIn: '2026-03-14T01:00:00.000Z', checkOut: '2026-03-14T02:00:00.000Z' },
+        { checkIn: '2026-03-14T10:00:00.000Z', checkOut: null },
+      ])
+    ).toBe(60);
+  });
+
+  it('is null until at least one session closes', () => {
+    expect(
+      totalSessionMinutes([{ checkIn: '2026-03-14T01:00:00.000Z', checkOut: null }])
+    ).toBeNull();
+    expect(totalSessionMinutes([])).toBeNull();
   });
 });
 

@@ -492,9 +492,9 @@ describe('getMonthAttendance - the current-month column on the members list', ()
 });
 
 // ---------------------------------------------------------------------------
-// Phase 7: the scanning toggle, check-out, re-entry and the overnight sweep.
+// Phase 7/8: the scanning toggle, check-out, the second session and the sweep.
 //
-// getTodaySession() and checkout()/recordReentry() both go through
+// getTodaySession(), the closes and the second-session start all go through
 // supabase.from('attendance'), so the mock hands out a different chain per
 // call, in the order the service makes them.
 // ---------------------------------------------------------------------------
@@ -589,7 +589,7 @@ describe('toggleAttendance - one scan resolves to the right action', () => {
     expect(rpc.mock.calls.some(([fn]) => fn === 'log_attendance')).toBe(false);
   });
 
-  it('reopens the day when the member is back after an earlier departure', async () => {
+  it('starts a second session when the member is back after an earlier departure', async () => {
     getMemberByPass.mockResolvedValue(member());
     rpcWithCheckIn();
     from
@@ -611,9 +611,12 @@ describe('toggleAttendance - one scan resolves to the right action', () => {
             id: 'row-1',
             attendance_date: CLUB_TODAY,
             check_in_time: '2026-03-14T01:42:00.000Z',
-            check_out_time: null,
+            check_out_time: '2026-03-14T03:02:00.000Z',
             method: 'QR_SCAN',
-            checkout_method: null,
+            checkout_method: 'QR_SCAN',
+            second_check_in_time: '2026-03-14T10:00:00.000Z',
+            second_check_out_time: null,
+            second_checkout_method: null,
           },
         })
       );
@@ -622,7 +625,83 @@ describe('toggleAttendance - one scan resolves to the right action', () => {
 
     expect(result.success).toBe(true);
     expect(result.action).toBe('IN');
+    expect(result.session).toBe(2);
     expect(result.reentry).toBe(true);
+    // The first session is left untouched: only the second arrival is written.
+    expect(result.attendance.check_out_time).toBe('2026-03-14T03:02:00.000Z');
+    expect(result.attendance.second_check_in_time).toBe('2026-03-14T10:00:00.000Z');
+  });
+
+  it('closes the second session when the member leaves again', async () => {
+    getMemberByPass.mockResolvedValue(member());
+    rpcWithCheckIn();
+    from
+      .mockReturnValueOnce(
+        todaySessionChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: '2026-03-14T03:02:00.000Z',
+            method: 'QR_SCAN',
+            checkout_method: 'QR_SCAN',
+            second_check_in_time: '2026-03-14T10:00:00.000Z',
+            second_check_out_time: null,
+            second_checkout_method: null,
+          },
+        })
+      )
+      .mockReturnValueOnce(
+        closeChain({
+          data: {
+            id: 'row-1',
+            attendance_date: CLUB_TODAY,
+            check_in_time: '2026-03-14T01:42:00.000Z',
+            check_out_time: '2026-03-14T03:02:00.000Z',
+            method: 'QR_SCAN',
+            checkout_method: 'QR_SCAN',
+            second_check_in_time: '2026-03-14T10:00:00.000Z',
+            second_check_out_time: '2026-03-14T11:00:00.000Z',
+            second_checkout_method: 'QR_SCAN',
+          },
+        })
+      );
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(true);
+    expect(result.action).toBe('OUT');
+    expect(result.session).toBe(2);
+    // The second close guards on second_check_out_time, not the first.
+    expect(result.attendance.second_check_out_time).toBe('2026-03-14T11:00:00.000Z');
+  });
+
+  it('refuses a third visit once both sessions are complete', async () => {
+    getMemberByPass.mockResolvedValue(member());
+    rpcWithCheckIn();
+    from.mockReturnValueOnce(
+      todaySessionChain({
+        data: {
+          id: 'row-1',
+          attendance_date: CLUB_TODAY,
+          check_in_time: '2026-03-14T01:42:00.000Z',
+          check_out_time: '2026-03-14T03:02:00.000Z',
+          method: 'QR_SCAN',
+          checkout_method: 'QR_SCAN',
+          second_check_in_time: '2026-03-14T10:00:00.000Z',
+          second_check_out_time: '2026-03-14T11:00:00.000Z',
+          second_checkout_method: 'QR_SCAN',
+        },
+      })
+    );
+
+    const result = await attendanceService.toggleAttendance('BS-0001');
+
+    expect(result.success).toBe(false);
+    expect(result.limitReached).toBe(true);
+    expect(result.error).toMatch(/both sessions/i);
+    // Nothing was written: no log_attendance call, no update chain consumed.
+    expect(rpc.mock.calls.some(([fn]) => fn === 'log_attendance')).toBe(false);
   });
 
   it('still lets a member check out after their plan lapsed during the day', async () => {
@@ -708,6 +787,33 @@ describe('checkout / recordCheckOut', () => {
     expect(result.alreadyClosed).toBe(true);
     expect(result.attendance).toBeNull();
   });
+
+  it('closes the second session on its own guard, not the first', async () => {
+    const chain = closeChain({
+      data: {
+        id: 'row-1',
+        attendance_date: CLUB_TODAY,
+        check_in_time: '2026-03-14T01:42:00.000Z',
+        check_out_time: '2026-03-14T03:02:00.000Z',
+        method: 'QR_SCAN',
+        checkout_method: 'QR_SCAN',
+        second_check_in_time: '2026-03-14T10:00:00.000Z',
+        second_check_out_time: '2026-03-14T11:00:00.000Z',
+        second_checkout_method: 'MANUAL_ENTRY',
+      },
+    });
+    from.mockReturnValue({ update: chain.update });
+
+    const result = await attendanceService.checkoutSecond('row-1', 'MANUAL_ENTRY');
+
+    expect(result.alreadyClosed).toBe(false);
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ second_checkout_method: 'MANUAL_ENTRY' })
+    );
+    // The first session's departure must not be touched.
+    expect(chain.update.mock.calls[0][0]).not.toHaveProperty('check_out_time');
+    expect(chain.isNull).toHaveBeenCalledWith('second_check_out_time', null);
+  });
 });
 
 describe('closeForgottenSessions', () => {
@@ -736,25 +842,70 @@ describe('closeForgottenSessions', () => {
 });
 
 describe('getAttendanceLogs - time spent', () => {
+  function baseRow(overrides = {}) {
+    return {
+      id: 'row-1',
+      member_id: MEMBER_ID,
+      attendance_date: CLUB_TODAY,
+      check_in_time: '2026-03-14T01:00:00.000Z',
+      check_out_time: '2026-03-14T02:20:00.000Z',
+      checkout_method: 'QR_SCAN',
+      method: 'QR_SCAN',
+      members: {
+        id: MEMBER_ID,
+        full_name: 'Kasun Kalhara Perera',
+        member_code: 'M-0001',
+        status: 'Active',
+        memberships: [{ status: 'Active', plans: { name: 'Monthly' } }],
+      },
+      ...overrides,
+    };
+  }
+
   it('derives duration_minutes and carries checkout_method', async () => {
+    const limit = vi.fn().mockResolvedValue({ data: [baseRow()], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ order }));
+    from.mockReturnValue({ select });
+
+    const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
+
+    expect(logs[0].duration_minutes).toBe(80);
+    expect(logs[0].checkout_method).toBe('QR_SCAN');
+    expect(logs[0].open_session).toBe(0);
+    expect(logs[0].sessions_count).toBe(1);
+  });
+
+  it('sums both sessions of the day into duration_minutes', async () => {
     const limit = vi.fn().mockResolvedValue({
       data: [
-        {
-          id: 'row-1',
-          member_id: MEMBER_ID,
-          attendance_date: CLUB_TODAY,
-          check_in_time: '2026-03-14T01:00:00.000Z',
-          check_out_time: '2026-03-14T02:20:00.000Z',
-          checkout_method: 'QR_SCAN',
-          method: 'QR_SCAN',
-          members: {
-            id: MEMBER_ID,
-            full_name: 'Kasun Kalhara Perera',
-            member_code: 'M-0001',
-            status: 'Active',
-            memberships: [{ status: 'Active', plans: { name: 'Monthly' } }],
-          },
-        },
+        baseRow({
+          second_check_in_time: '2026-03-14T10:00:00.000Z',
+          second_check_out_time: '2026-03-14T10:30:00.000Z',
+          second_checkout_method: 'QR_SCAN',
+        }),
+      ],
+      error: null,
+    });
+    const order = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ order }));
+    from.mockReturnValue({ select });
+
+    const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
+
+    expect(logs[0].duration_minutes).toBe(110);
+    expect(logs[0].sessions_count).toBe(2);
+    expect(logs[0].open_session).toBe(0);
+  });
+
+  it('reports an open second session and counts only the closed first', async () => {
+    const limit = vi.fn().mockResolvedValue({
+      data: [
+        baseRow({
+          second_check_in_time: '2026-03-14T10:00:00.000Z',
+          second_check_out_time: null,
+          second_checkout_method: null,
+        }),
       ],
       error: null,
     });
@@ -765,12 +916,14 @@ describe('getAttendanceLogs - time spent', () => {
     const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
 
     expect(logs[0].duration_minutes).toBe(80);
-    expect(logs[0].checkout_method).toBe('QR_SCAN');
+    expect(logs[0].open_session).toBe(2);
+    expect(logs[0].sessions_count).toBe(2);
   });
 
-  it('retries without checkout_method on a pre-phase-7 database', async () => {
+  it('walks down to the phase 6 select on a pre-phase-7 database', async () => {
     const limit = vi
       .fn()
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST204' } })
       .mockResolvedValueOnce({ data: null, error: { code: 'PGRST204' } })
       .mockResolvedValueOnce({ data: [], error: null });
     const order = vi.fn(() => ({ limit }));
@@ -780,8 +933,11 @@ describe('getAttendanceLogs - time spent', () => {
     const logs = await attendanceService.getAttendanceLogs({ date: 'ALL' });
 
     expect(logs).toEqual([]);
-    // First the full select, then the legacy one that omits the new column.
-    expect(select).toHaveBeenCalledTimes(2);
-    expect(select.mock.calls[1][0]).not.toMatch(/checkout_method/);
+    // Full select, then phase 7 (no second-session columns), then phase 6 (no
+    // checkout_method either).
+    expect(select).toHaveBeenCalledTimes(3);
+    expect(select.mock.calls[0][0]).toMatch(/second_check_in_time/);
+    expect(select.mock.calls[1][0]).not.toMatch(/second_check_in_time/);
+    expect(select.mock.calls[2][0]).not.toMatch(/checkout_method/);
   });
 });
