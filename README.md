@@ -82,8 +82,17 @@ Gym/
 │   ├── .htaccess              # Apache / XAMPP SPA fallback
 │   ├── 404.html               # GitHub Pages: parks the deep link, boots the app
 │   ├── _redirects             # Netlify / Cloudflare Pages SPA fallback
-│   ├── favicon.ico
-│   └── favicon.svg
+│   ├── favicon.ico            # multi-size favicon (16/32/48/64)
+│   ├── favicon-16x16.png
+│   ├── favicon-32x32.png
+│   ├── favicon-48x48.png
+│   ├── favicon-96x96.png
+│   ├── icon-192x192.png
+│   ├── icon-512x512.png
+│   ├── maskable-icon-512x512.png
+│   ├── apple-touch-icon.png   # 180x180 iOS home screen
+│   ├── manifest.webmanifest   # PWA icons + install metadata
+│   └── Favicone.png           # source logo, icons are derived from this
 └── src/
     ├── main.jsx               # restores the parked deep link before React mounts
     ├── App.jsx                # config gate -> BrowserRouter (basename) -> providers
