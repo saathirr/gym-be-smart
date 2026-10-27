@@ -33,6 +33,7 @@ const COLUMN_ALIASES = {
   address: ['Address', 'address'],
   gender: ['Gender', 'gender'],
   dateOfBirth: ['Date of Birth', 'date_of_birth', 'DOB', 'dob'],
+  joinDate: ['Join Date', 'join_date', 'Joining Date', 'Date of Joining'],
   emergencyContact: ['Emergency Contact', 'emergency_contact'],
   medicalConditions: ['Medical Conditions', 'medical_conditions'],
 };
@@ -144,9 +145,28 @@ export function canonicalPhoneKey(input) {
  * @returns {{ value: string | null, error: string | null }}
  */
 export function normalizeDateOfBirth(input) {
+  return normalizeDateInput(input, 'date of birth');
+}
+
+/**
+ * Normalises a join-date cell to YYYY-MM-DD.
+ *
+ * The same rules as date_of_birth, with its own wording so a rejected cell
+ * names the column the person fixing the spreadsheet has to look at. A blank
+ * cell is left unset rather than being replaced with today: the importer must
+ * not invent a join date, because that is exactly the all-the-same-date problem
+ * this column exists to fix.
+ *
+ * @returns {{ value: string | null, error: string | null }}
+ */
+export function normalizeJoinDate(input) {
+  return normalizeDateInput(input, 'join date');
+}
+
+function normalizeDateInput(input, label) {
   if (input instanceof Date) {
     if (Number.isNaN(input.getTime())) {
-      return { value: null, error: 'Invalid date of birth: unreadable date' };
+      return { value: null, error: `Invalid ${label}: unreadable date` };
     }
     const year = input.getFullYear();
     const month = String(input.getMonth() + 1).padStart(2, '0');
@@ -162,7 +182,7 @@ export function normalizeDateOfBirth(input) {
   if (iso) {
     return isRealDate(Number(iso[1]), Number(iso[2]), Number(iso[3]))
       ? { value, error: null }
-      : { value: null, error: `Invalid date of birth: ${value}` };
+      : { value: null, error: `Invalid ${label}: ${value}` };
   }
 
   // Day first, as written in Sri Lanka. Excel exports to a text date column in
@@ -180,7 +200,7 @@ export function normalizeDateOfBirth(input) {
     }
   }
 
-  return { value: null, error: `Invalid date of birth: ${value}` };
+  return { value: null, error: `Invalid ${label}: ${value}` };
 }
 
 // Guards against a well-shaped but impossible date such as 1995-02-31, which
@@ -209,6 +229,7 @@ export function normalizeMemberRow(row, excelRowNumber) {
   const district = normalizeDistrict(readCell(row, COLUMN_ALIASES.district));
   const gender = normalizeGender(readCell(row, COLUMN_ALIASES.gender));
   const dateOfBirth = normalizeDateOfBirth(readCell(row, COLUMN_ALIASES.dateOfBirth));
+  const joinDate = normalizeJoinDate(readCell(row, COLUMN_ALIASES.joinDate));
 
   const errors = [];
   if (!fullName) errors.push('Missing Full Name');
@@ -216,6 +237,7 @@ export function normalizeMemberRow(row, excelRowNumber) {
   if (district.error) errors.push(district.error);
   if (gender.error) errors.push(gender.error);
   if (dateOfBirth.error) errors.push(dateOfBirth.error);
+  if (joinDate.error) errors.push(joinDate.error);
 
   return {
     rowId: Math.max(0, excelRowNumber - 2),
@@ -230,6 +252,7 @@ export function normalizeMemberRow(row, excelRowNumber) {
     address: readTrimmed(row, COLUMN_ALIASES.address) || null,
     gender: gender.value,
     date_of_birth: dateOfBirth.value,
+    join_date: joinDate.value,
     emergency_contact: readTrimmed(row, COLUMN_ALIASES.emergencyContact) || null,
     medical_conditions: readTrimmed(row, COLUMN_ALIASES.medicalConditions) || null,
     phoneKey: phone ? canonicalPhoneKey(phone) : '',

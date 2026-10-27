@@ -12,10 +12,13 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  Calendar,
+  Pencil,
   QrCode,
   UserRound,
 } from 'lucide-react';
 import { memberService } from '../services/memberService';
+import { useAuth } from '../hooks/useAuth';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { settingsService } from '../services/settingsService';
 import { toDateKey, formatTimestamp } from '../utils/attendanceMath';
@@ -24,6 +27,8 @@ import { formatPhone } from '../utils/phone';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
 import { MemberPhoto } from '../components/members/MemberPhoto';
 import { MemberAttendanceHistory } from '../components/members/MemberAttendanceHistory';
 import { GymCardPanel } from '../components/members/GymCardPanel';
@@ -44,16 +49,19 @@ const SECTIONS = [
   { id: 'gym-card', label: 'Gym Card' },
 ];
 
-function InfoRow({ icon: Icon, label, value }) {
-  if (!value) return null;
+function InfoRow({ icon: Icon, label, value, action }) {
+  // A row with an action still renders when it has no value, so an editable
+  // field that is currently empty ("Not set") can still offer its edit control.
+  if (!value && !action) return null;
 
   return (
     <div className="flex items-start gap-3 py-2">
       <Icon className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
         <p className="text-sm text-slate-200 break-words">{value}</p>
       </div>
+      {action}
     </div>
   );
 }
@@ -89,6 +97,44 @@ export function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [attendanceLoading, setAttendanceLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const { isAdmin } = useAuth();
+
+  // Editing just the join date from the profile. The change moves the current
+  // membership cycle (see memberService.updateMemberJoinDate), so it is treated
+  // as a deliberate action with its own small modal rather than a free-text
+  // field on the page.
+  const [joinDateOpen, setJoinDateOpen] = useState(false);
+  const [joinDateInput, setJoinDateInput] = useState('');
+  const [joinDateSaving, setJoinDateSaving] = useState(false);
+  const [joinDateError, setJoinDateError] = useState('');
+
+  const openJoinDateModal = () => {
+    // Prefill from the stored join date, falling back to the derived one so the
+    // field is never blank when the row already shows a date.
+    setJoinDateInput(member?.join_date || toDateKey(member?.created_at, settings?.timezone) || '');
+    setJoinDateError('');
+    setJoinDateOpen(true);
+  };
+
+  const saveJoinDate = async () => {
+    if (!joinDateInput) {
+      setJoinDateError('Choose a join date.');
+      return;
+    }
+
+    setJoinDateSaving(true);
+    setJoinDateError('');
+    try {
+      await memberService.updateMemberJoinDate(member.id, joinDateInput);
+      setJoinDateOpen(false);
+      await load();
+    } catch (err) {
+      setJoinDateError(err.message || 'The join date could not be saved.');
+    } finally {
+      setJoinDateSaving(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -133,13 +179,13 @@ export function PlayerProfilePage() {
     load();
   }, [load]);
 
-  // The attendance cutoff is the player's registration date. members has no
-  // registration_date column, so created_at is the join date; it is converted
-  // to a club-local key so a player registered at 23:30 is not assessed from
-  // the following day.
+  // The attendance cutoff is the player's join date. members.join_date is the
+  // authoritative date staff maintain; created_at is only the fallback for a
+  // record that predates it. Both resolve to a club-local key, so a player
+  // registered at 23:30 is not assessed from the following day.
   const registrationDate = useMemo(
-    () => toDateKey(member?.created_at, settings?.timezone),
-    [member?.created_at, settings?.timezone]
+    () => toDateKey(member?.join_date ?? member?.created_at, settings?.timezone),
+    [member?.join_date, member?.created_at, settings?.timezone]
   );
 
   // One QR payload source for the whole app: the card, the PDF and this pass all
@@ -302,6 +348,24 @@ export function PlayerProfilePage() {
                   icon={UserRound}
                   label="Date of birth"
                   value={formatDate(member.date_of_birth)}
+                />
+                <InfoRow
+                  icon={Calendar}
+                  label="Join date"
+                  value={formatDate(member.join_date) || 'Not set'}
+                  action={
+                    isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={openJoinDateModal}
+                        title="Edit join date"
+                        aria-label="Edit join date"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-brand-gold hover:bg-gym-800 transition shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    ) : null
+                  }
                 />
                 <InfoRow
                   icon={Phone}
@@ -467,6 +531,40 @@ export function PlayerProfilePage() {
           See the full attendance log
         </Link>
       </div>
+
+      <Modal
+        isOpen={joinDateOpen}
+        onClose={() => !joinDateSaving && setJoinDateOpen(false)}
+        title="Edit join date"
+        className="w-[min(420px,94vw)] max-w-none"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Join date"
+            type="date"
+            value={joinDateInput}
+            onChange={(e) => setJoinDateInput(e.target.value)}
+          />
+          <p className="text-[11px] text-slate-500">
+            The membership plan starts from this date, so the expiry and the payment reminder
+            follow it. Payments already recorded are not changed.
+          </p>
+          {joinDateError && <p className="text-xs text-brand-rose">{joinDateError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setJoinDateOpen(false)}
+              disabled={joinDateSaving}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveJoinDate} disabled={joinDateSaving}>
+              {joinDateSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

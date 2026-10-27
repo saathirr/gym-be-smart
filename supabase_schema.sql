@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS public.members (
   address TEXT,                     -- Residential Address
   gender TEXT CHECK (gender IN ('Male', 'Female', 'Other')),
   date_of_birth DATE,
+  join_date DATE,                   -- Day the player actually joined; drives the billing cycle
   emergency_contact TEXT,
   medical_conditions TEXT,
   avatar_url TEXT,
@@ -158,7 +159,8 @@ ALTER TABLE public.members
   ADD COLUMN IF NOT EXISTS nic_number TEXT,
   ADD COLUMN IF NOT EXISTS whatsapp_number TEXT,
   ADD COLUMN IF NOT EXISTS district TEXT,
-  ADD COLUMN IF NOT EXISTS address TEXT;
+  ADD COLUMN IF NOT EXISTS address TEXT,
+  ADD COLUMN IF NOT EXISTS join_date DATE;
 
 -- =====================================================================
 -- TABLE: memberships (Active Subscriptions & Expirations)

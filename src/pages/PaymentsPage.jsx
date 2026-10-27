@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, Printer, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
+import {
+  Plus,
+  Search,
+  Printer,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  CreditCard,
+  RefreshCw,
+} from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -8,7 +19,10 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { paymentService } from '../services/paymentService';
 import { memberService } from '../services/memberService';
+import { membershipService } from '../services/membershipService';
+import { planService } from '../services/planService';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatPhone } from '../utils/phone';
 import { useGym } from '../hooks/useGym';
 import { useAuth } from '../hooks/useAuth';
 import { toMessage } from '../lib/supabaseErrors';
@@ -21,8 +35,12 @@ const METHOD_LABELS = {
 };
 
 export function PaymentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+
   const [payments, setPayments] = useState([]);
   const [members, setMembers] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -39,6 +57,8 @@ export function PaymentsPage() {
     payment_status: 'Paid',
     notes: '',
   });
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [renewCycle, setRenewCycle] = useState(true);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -50,13 +70,15 @@ export function PaymentsPage() {
       setLoading(true);
       setError('');
 
-      const [paymentRows, memberRows] = await Promise.all([
+      const [paymentRows, memberRows, planRows] = await Promise.all([
         paymentService.getPayments({ method: methodFilter, status: statusFilter }),
-        memberService.getMembers({ status: 'Active' }),
+        memberService.getMembers({ status: 'ALL', limit: 1000 }),
+        planService.getPlans({ includeInactive: false }),
       ]);
 
       setPayments(paymentRows);
       setMembers(memberRows);
+      setPlans(planRows);
     } catch (err) {
       setError(toMessage(err, 'Could not load payments.'));
       setPayments([]);
@@ -69,23 +91,104 @@ export function PaymentsPage() {
     loadData();
   }, [loadData]);
 
+  // Handle redirect from /payment-reminders or members directory
+  useEffect(() => {
+    const targetId = location.state?.memberId || searchParams.get('memberId');
+    const shouldOpen =
+      location.state?.openRecord ||
+      searchParams.get('action') === 'record' ||
+      Boolean(targetId);
+
+    if (targetId && members.length > 0) {
+      const found = members.find((m) => m.id === targetId);
+      if (found) {
+        setFormData({
+          member_id: found.id,
+          amount: found.plan_price ? String(found.plan_price) : '',
+          payment_method: 'Cash',
+          payment_status: 'Paid',
+          notes:
+            found.plan_name && found.plan_name !== 'No Active Plan'
+              ? `Membership payment - ${found.plan_name}`
+              : 'Membership payment',
+        });
+        setRenewCycle(Boolean(found.plan_id));
+        setFormError('');
+        setMemberSearchQuery('');
+        setIsRecordModalOpen(true);
+
+        // Clean up search parameters so refreshing doesn't keep reopening
+        if (searchParams.get('memberId') || searchParams.get('action')) {
+          const next = new URLSearchParams(searchParams);
+          next.delete('memberId');
+          next.delete('action');
+          setSearchParams(next, { replace: true });
+        }
+      }
+    } else if (shouldOpen && !targetId && members.length > 0 && !isRecordModalOpen) {
+      openRecordModal();
+    }
+  }, [members, searchParams, location.state]);
+
   const openRecordModal = () => {
     setFormData({
-      member_id: members[0]?.id || '',
+      member_id: '',
       amount: '',
       payment_method: 'Cash',
       payment_status: 'Paid',
       notes: '',
     });
+    setRenewCycle(true);
+    setMemberSearchQuery('');
     setFormError('');
     setIsRecordModalOpen(true);
+  };
+
+  const selectedMember = useMemo(() => {
+    return members.find((m) => m.id === formData.member_id) || null;
+  }, [members, formData.member_id]);
+
+  const memberSearchTerm = memberSearchQuery.trim().toLowerCase();
+  const filteredMembers = useMemo(() => {
+    if (!memberSearchTerm) {
+      return members.slice(0, 30);
+    }
+    return members.filter((m) => {
+      const name = (m.full_name || '').toLowerCase();
+      const code = (m.member_code || '').toLowerCase();
+      const nic = (m.nic_number || '').toLowerCase();
+      const phone = (m.phone || '').toLowerCase();
+      const wa = (m.whatsapp_number || '').toLowerCase();
+      return (
+        name.includes(memberSearchTerm) ||
+        code.includes(memberSearchTerm) ||
+        nic.includes(memberSearchTerm) ||
+        phone.includes(memberSearchTerm) ||
+        wa.includes(memberSearchTerm)
+      );
+    });
+  }, [members, memberSearchTerm]);
+
+  const handleSelectMember = (m) => {
+    setFormData((prev) => ({
+      ...prev,
+      member_id: m.id,
+      amount: m.plan_price ? String(m.plan_price) : prev.amount || '',
+      notes:
+        m.plan_name && m.plan_name !== 'No Active Plan'
+          ? `Membership renewal - ${m.plan_name}`
+          : prev.notes || 'Membership payment',
+    }));
+    setRenewCycle(Boolean(m.plan_id));
+    setMemberSearchQuery('');
+    setFormError('');
   };
 
   const handleRecordPayment = async (e) => {
     e.preventDefault();
 
     if (!formData.member_id) {
-      setFormError('Select a member.');
+      setFormError('Please search and select a member.');
       return;
     }
     if (!(Number(formData.amount) > 0)) {
@@ -97,15 +200,61 @@ export function PaymentsPage() {
       setSubmitting(true);
       setFormError('');
 
-      await paymentService.recordPayment({
-        memberId: formData.member_id,
-        amount: Number(formData.amount),
-        paymentMethod: formData.payment_method,
-        status: formData.payment_status,
-        notes: formData.notes,
-      });
+      let receiptData = null;
+
+      // When renew cycle is selected and member has a plan, renew atomically
+      if (renewCycle && selectedMember?.plan_id) {
+        const result = await membershipService.renewMembership(
+          formData.member_id,
+          selectedMember.plan_id,
+          {
+            paymentMethod: formData.payment_method,
+            notes: formData.notes,
+          }
+        );
+
+        receiptData = {
+          id: result?.membership_id || Date.now().toString(),
+          receipt_number: result?.receipt_number || 'RECEIPT',
+          member_id: selectedMember.id,
+          member_name: selectedMember.full_name,
+          member_code: selectedMember.member_code,
+          amount: Number(selectedMember.plan_price || formData.amount),
+          payment_method: formData.payment_method,
+          payment_status: 'Paid',
+          transaction_date: new Date().toISOString(),
+          notes: formData.notes,
+        };
+      } else {
+        // Standard payment recording
+        const recorded = await paymentService.recordPayment({
+          memberId: formData.member_id,
+          amount: Number(formData.amount),
+          paymentMethod: formData.payment_method,
+          status: formData.payment_status,
+          notes: formData.notes,
+        });
+        receiptData = recorded;
+      }
+
+      // If this member was dismissed in reminders, clear their dismissal key
+      try {
+        const raw = localStorage.getItem('gym_dismissed_payment_reminders');
+        if (raw) {
+          const map = JSON.parse(raw);
+          if (map[formData.member_id]) {
+            delete map[formData.member_id];
+            localStorage.setItem('gym_dismissed_payment_reminders', JSON.stringify(map));
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
 
       setIsRecordModalOpen(false);
+      if (receiptData) {
+        setSelectedReceipt(receiptData);
+      }
       await loadData();
     } catch (err) {
       setFormError(toMessage(err, 'Could not record this payment.'));
@@ -327,26 +476,148 @@ export function PaymentsPage() {
             </div>
           )}
 
-          {members.length === 0 ? (
-            <p className="text-xs text-amber-400">
-              There are no active members to charge. Register a member first.
-            </p>
-          ) : (
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Member *</label>
-              <select
-                value={formData.member_id}
-                onChange={(e) => setFormData({ ...formData, member_id: e.target.value })}
-                className="w-full rounded-lg bg-gym-850 text-slate-100 text-xs px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-gold/40"
-              >
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.full_name} ({member.member_code})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Member Selection Section */}
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              Member *
+            </label>
+
+            {selectedMember ? (
+              <div className="p-3 rounded-xl bg-gym-950 border border-brand-cyan/30 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-slate-100 text-sm">
+                      {selectedMember.full_name}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
+                      {selectedMember.member_code}
+                    </span>
+                    <Badge
+                      variant={
+                        selectedMember.status === 'Active'
+                          ? 'emerald'
+                          : selectedMember.status === 'Expired'
+                          ? 'rose'
+                          : 'amber'
+                      }
+                    >
+                      {selectedMember.status}
+                    </Badge>
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+                    {selectedMember.nic_number && (
+                      <span>
+                        <span className="text-slate-500 font-normal">NIC:</span>{' '}
+                        {selectedMember.nic_number}
+                      </span>
+                    )}
+                    {(selectedMember.phone || selectedMember.whatsapp_number) && (
+                      <span>
+                        <span className="text-slate-500 font-normal">Phone:</span>{' '}
+                        {formatPhone(selectedMember.phone || selectedMember.whatsapp_number)}
+                      </span>
+                    )}
+                    <span>
+                      <span className="text-slate-500 font-normal">Plan:</span>{' '}
+                      {selectedMember.plan_name || 'No Plan'}
+                      {selectedMember.plan_price
+                        ? ` (${formatCurrency(selectedMember.plan_price, currency)})`
+                        : ''}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setFormData((prev) => ({ ...prev, member_id: '' }));
+                    setMemberSearchQuery('');
+                  }}
+                  className="shrink-0 text-slate-300 hover:text-white"
+                >
+                  Change
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search by Name, NIC, Phone, or Register No (BSG-...)"
+                    value={memberSearchQuery}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-gym-850 text-xs text-slate-100 placeholder-slate-500 border border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-brand-cyan focus:border-brand-cyan"
+                  />
+                  {memberSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setMemberSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtered members list */}
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-800 bg-gym-950/90 divide-y divide-slate-800/60">
+                  {filteredMembers.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                      {memberSearchQuery
+                        ? `No members found matching "${memberSearchQuery}". Try NIC, phone, or register number.`
+                        : 'No members available on file.'}
+                    </div>
+                  ) : (
+                    filteredMembers.map((m) => (
+                      <div
+                        key={m.id}
+                        onClick={() => handleSelectMember(m)}
+                        className="p-2.5 hover:bg-brand-cyan/10 hover:border-brand-cyan/20 cursor-pointer transition flex items-center justify-between gap-3 group"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-xs text-slate-200 group-hover:text-brand-cyan">
+                              {m.full_name}
+                            </span>
+                            <span className="font-mono text-[10px] text-brand-cyan px-1.5 py-0.5 rounded bg-gym-850">
+                              {m.member_code}
+                            </span>
+                            <Badge
+                              variant={
+                                m.status === 'Active'
+                                  ? 'emerald'
+                                  : m.status === 'Expired'
+                                  ? 'rose'
+                                  : 'default'
+                              }
+                            >
+                              {m.status}
+                            </Badge>
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                            {m.nic_number && <span>NIC: {m.nic_number}</span>}
+                            {(m.phone || m.whatsapp_number) && (
+                              <span>{formatPhone(m.phone || m.whatsapp_number)}</span>
+                            )}
+                            <span>{m.plan_name || 'No Plan'}</span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-mono font-semibold text-slate-300 shrink-0">
+                          {m.plan_price ? formatCurrency(m.plan_price, currency) : ''}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Showing {filteredMembers.length} of {members.length} members. Type name, NIC, phone or code to filter.
+                </p>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Input
@@ -374,6 +645,28 @@ export function PaymentsPage() {
               </select>
             </div>
           </div>
+
+          {selectedMember?.plan_id && (
+            <div className="p-3 rounded-lg bg-gym-950 border border-slate-800 space-y-1.5">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={renewCycle}
+                  onChange={(e) => setRenewCycle(e.target.checked)}
+                  className="mt-0.5 rounded bg-gym-850 border-slate-700 text-brand-cyan focus:ring-brand-cyan"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-slate-200">
+                    Renew / advance membership cycle
+                  </span>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Restarts the 28-day billing cycle for {selectedMember.plan_name}, extends expiration,
+                    and clears this member from the payment reminders list.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
 
           {isAdmin && (
             <div>
@@ -406,7 +699,7 @@ export function PaymentsPage() {
             <Button
               type="submit"
               variant="emerald"
-              disabled={submitting || members.length === 0}
+              disabled={submitting || !formData.member_id}
             >
               {submitting ? 'Recording...' : 'Record and issue receipt'}
             </Button>

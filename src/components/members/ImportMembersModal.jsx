@@ -33,6 +33,7 @@ const SAMPLE_MEMBERS = [
     Address: 'No. 45, Temple Road, Nugegoda',
     Gender: 'Male',
     'Date of Birth': '1995-05-14',
+    'Join Date': '2025-01-05',
     'Emergency Contact': '0777654321',
     'Medical Conditions': 'None',
   },
@@ -46,6 +47,7 @@ const SAMPLE_MEMBERS = [
     Address: 'Main Street, Negombo',
     Gender: 'Female',
     'Date of Birth': '1998-11-20',
+    'Join Date': '2025-02-18',
     'Emergency Contact': '0712223334',
     'Medical Conditions': 'Asthma',
   },
@@ -526,6 +528,7 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                       <th className="p-2.5 w-36">Mobile Phone</th>
                       <th className="p-2.5 w-32">District</th>
                       <th className="p-2.5 w-24">Gender</th>
+                      <th className="p-2.5 w-28">Join Date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-hairline">
@@ -559,6 +562,7 @@ export function ImportMembersModal({ isOpen, onClose, plans = [], currency, onIm
                         </td>
                         <td className="p-2.5 text-slate-400">{row.district || '—'}</td>
                         <td className="p-2.5 text-slate-400">{row.gender || '—'}</td>
+                        <td className="p-2.5 text-slate-400 font-mono">{row.join_date || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

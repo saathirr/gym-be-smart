@@ -877,6 +877,21 @@ describe('buildMemberMonthSummaries', () => {
     expect(summaries.evening.days[0].status).toBe('Leave');
   });
 
+  it('prefers an explicit join_date over created_at', () => {
+    const summaries = buildMemberMonthSummaries({
+      rows: [],
+      members: [
+        { id: 'joined', join_date: '2026-09-05', created_at: '2026-09-01T04:00:00.000Z' },
+      ],
+      monthStart: '2026-09-01',
+      today: '2026-09-10',
+      timeZone: 'Asia/Colombo',
+    });
+
+    // From the 5th to the 10th is 6 applicable days, not 10.
+    expect(summaries.joined.applicableDays).toBe(6);
+  });
+
   it('ignores rows with no member_id and members with no id', () => {
     const summaries = buildMemberMonthSummaries({
       rows: [

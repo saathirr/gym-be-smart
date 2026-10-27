@@ -343,7 +343,10 @@ export function buildMemberMonthSummaries({
 
     summaries[id] = buildMonthSummary({
       attendanceRows: byMember.get(id) || [],
-      registrationDate: toDateKey(member.registrationDate ?? member.created_at, timeZone),
+      registrationDate: toDateKey(
+        member.registrationDate ?? member.join_date ?? member.created_at,
+        timeZone
+      ),
       monthStart,
       today,
       timeZone,

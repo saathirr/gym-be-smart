@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { toMessage, stageError, describeError, isMissingFunction } from '../lib/supabaseErrors';
-import { addDays } from 'date-fns';
+import { addDays, toDateKey } from '../utils/attendanceMath';
 import { phoneSearchVariants } from '../utils/phone';
 import { canonicalPhoneKey } from '../utils/memberImport';
 import { storageService } from './storageService';
@@ -18,6 +18,7 @@ const MEMBER_SELECT = `
   address,
   gender,
   date_of_birth,
+  join_date,
   emergency_contact,
   medical_conditions,
   branch_id,
@@ -89,6 +90,7 @@ function emptyMemberForm() {
     address: '',
     gender: 'Male',
     date_of_birth: '',
+    join_date: '',
     emergency_contact: '',
     medical_conditions: '',
     branch_id: '',
@@ -267,6 +269,7 @@ export const memberService = {
       p_branch_id: payload.branch_id || null,
       p_plan_id: planId || null,
       p_payment_method: payload.payment_method || 'Cash',
+      p_join_date: payload.join_date || null,
     });
 
     if (!error) {
@@ -354,6 +357,7 @@ export const memberService = {
           // single-member form always submits one of the three allowed words.
           gender: payload.gender?.trim() || null,
           date_of_birth: payload.date_of_birth || null,
+          join_date: payload.join_date || null,
           emergency_contact: payload.emergency_contact?.trim() || null,
           medical_conditions: payload.medical_conditions?.trim() || null,
           branch_id: payload.branch_id || null,
@@ -412,8 +416,10 @@ export const memberService = {
       }
 
       if (plan) {
-        const startDate = new Date().toISOString().slice(0, 10);
-        const endDate = addDays(new Date(), plan.duration_days).toISOString().slice(0, 10);
+        // The membership starts from the join date when one was given, so the
+        // expiry and the reminder cycle match what the desk recorded.
+        const startDate = payload.join_date || toDateKey(new Date());
+        const endDate = addDays(startDate, plan.duration_days);
 
         const { data: membership, error: membershipError } = await supabase
           .from('memberships')
@@ -484,6 +490,7 @@ export const memberService = {
         address: payload.address?.trim() || null,
         gender: payload.gender || 'Male',
         date_of_birth: payload.date_of_birth || null,
+        join_date: payload.join_date || null,
         emergency_contact: payload.emergency_contact?.trim() || null,
         medical_conditions: payload.medical_conditions?.trim() || null,
         branch_id: payload.branch_id || null,
@@ -494,6 +501,75 @@ export const memberService = {
 
     if (error) throw toMessage(error);
     return withPlanSummary(data);
+  },
+
+  /**
+   * Moves a member's join date, and with it the current billing cycle.
+   *
+   * Prefers set_member_join_date, which stores the member's join_date and moves
+   * the open membership's start_date (re-deriving end_date from the plan) in one
+   * transaction, so the expiry and the payment reminder follow the join date.
+   * Only a database that has not had phase 9 applied yet falls back to the same
+   * two writes made separately.
+   */
+  async updateMemberJoinDate(memberId, joinDate) {
+    if (!memberId || !joinDate) return null;
+
+    const { data, error } = await supabase.rpc('set_member_join_date', {
+      p_member_id: memberId,
+      p_join_date: joinDate,
+    });
+
+    if (!error) return data;
+
+    if (!isMissingFunction(error)) {
+      throw toMessage(error, 'Could not update the join date.');
+    }
+
+    return this.setJoinDateStepByStep(memberId, joinDate);
+  },
+
+  // The pre-phase-9 path: the member row and the membership written as separate
+  // requests. Reachable only while the database has no set_member_join_date.
+  async setJoinDateStepByStep(memberId, joinDate) {
+    const { error: memberError } = await supabase
+      .from('members')
+      .update({ join_date: joinDate })
+      .eq('id', memberId);
+
+    if (memberError) throw toMessage(memberError, 'Could not update the join date.');
+
+    const { data: open, error: openError } = await supabase
+      .from('memberships')
+      .select('id, plans ( duration_days )')
+      .eq('member_id', memberId)
+      .in('status', ['Active', 'Expiring'])
+      .order('start_date', { ascending: false })
+      .limit(1);
+
+    if (openError) throw toMessage(openError, 'Could not load the membership.');
+
+    const membership = open?.[0];
+    const durationDays = membership?.plans?.duration_days;
+    if (!membership || !durationDays) {
+      return { member_id: memberId, join_date: joinDate };
+    }
+
+    const endDate = addDays(joinDate, durationDays);
+    const { error: updateError } = await supabase
+      .from('memberships')
+      .update({ start_date: joinDate, end_date: endDate })
+      .eq('id', membership.id);
+
+    if (updateError) throw toMessage(updateError, 'Could not move the membership cycle.');
+
+    return {
+      member_id: memberId,
+      join_date: joinDate,
+      membership_id: membership.id,
+      start_date: joinDate,
+      end_date: endDate,
+    };
   },
 
   async updateMemberStatus(id, status) {
@@ -537,6 +613,7 @@ export const memberService = {
             address: row.address || null,
             gender: row.gender || null,
             date_of_birth: row.date_of_birth || null,
+            join_date: row.join_date || null,
             emergency_contact: row.emergency_contact || null,
             medical_conditions: row.medical_conditions || null,
             payment_method: paymentMethod,

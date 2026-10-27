@@ -212,7 +212,14 @@ describe('memberService member creation', () => {
         p_branch_id: null,
         p_plan_id: 'P1',
         p_payment_method: 'Cash',
+        p_join_date: null,
       });
+    });
+
+    it('passes the join date through so the membership starts from it', async () => {
+      await memberService.createMember({ ...validPayload, join_date: '2025-03-02' }, 'P1');
+
+      expect(supabase.state.calls.rpc[0].args.p_join_date).toBe('2025-03-02');
     });
 
     it('sends blank optional fields as null rather than empty strings', async () => {

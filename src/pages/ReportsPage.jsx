@@ -125,7 +125,7 @@ export function ReportsPage() {
           member.status,
           member.plan_name,
           member.expiration_date || '',
-          member.created_at,
+          member.join_date || member.created_at,
         ]);
         download(
           `${slug}_members_${stamp}.csv`,
@@ -141,7 +141,7 @@ export function ReportsPage() {
               'Status',
               'Plan',
               'Expires',
-              'Registered',
+              'Join Date',
             ],
             rows
           )

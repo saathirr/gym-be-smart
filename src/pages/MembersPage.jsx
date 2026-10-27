@@ -43,6 +43,7 @@ import {
   buildMemberMonthSummaries,
   monthLabel,
   parseKey,
+  todayKey,
 } from '../utils/attendanceMath';
 import { SRI_LANKAN_DISTRICTS } from '../utils/constants';
 import { buildWhatsAppMessage } from '../utils/gymCard';
@@ -63,6 +64,7 @@ function blankForm() {
     address: '',
     gender: 'Male',
     date_of_birth: '',
+    join_date: '',
     emergency_contact: '',
     medical_conditions: '',
     branch_id: '',
@@ -246,7 +248,14 @@ export function MembersPage() {
 
   const openAddModal = () => {
     setEditingMember(null);
-    setFormData({ ...blankForm(), plan_id: pickDefaultPlan(plans)?.id || '' });
+    // The join date defaults to the club's today, so the common case of a
+    // walk-in registration is one less field to fill. It stays editable for a
+    // player being added on the basis of an older paper form.
+    setFormData({
+      ...blankForm(),
+      plan_id: pickDefaultPlan(plans)?.id || '',
+      join_date: todayKey(timeZone),
+    });
     setFormError('');
     setPhotoFile(null);
     setIsAddModalOpen(true);
@@ -264,6 +273,7 @@ export function MembersPage() {
       address: member.address || '',
       gender: member.gender || 'Male',
       date_of_birth: member.date_of_birth || '',
+      join_date: member.join_date || '',
       emergency_contact: member.emergency_contact || '',
       medical_conditions: member.medical_conditions || '',
       branch_id: member.branch_id || '',
@@ -290,7 +300,17 @@ export function MembersPage() {
       setFormError('');
 
       if (editingMember) {
+        const joinDateChanged =
+          (formData.join_date || '') !== (editingMember.join_date || '');
+
         await memberService.updateMember(editingMember.id, formData);
+
+        // A changed join date also moves the current membership cycle, so the
+        // payment due date and the reminder follow it. Done after updateMember
+        // so the plain fields are saved even if the membership move fails.
+        if (joinDateChanged && formData.join_date) {
+          await memberService.updateMemberJoinDate(editingMember.id, formData.join_date);
+        }
 
         // The photo is replaced through the storage service rather than through
         // updateMember, so the row is repointed at the new object only after the
@@ -838,6 +858,21 @@ export function MembersPage() {
               value={formData.date_of_birth || ''}
               onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
             />
+          </div>
+
+          <div>
+            <Input
+              label={editingMember ? 'Join date' : 'Join date *'}
+              type="date"
+              value={formData.join_date || ''}
+              onChange={(e) => setFormData({ ...formData, join_date: e.target.value })}
+              required={!editingMember}
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              {editingMember
+                ? 'Changing this moves the current membership to start from this date, and resets the expiry and payment reminder to match.'
+                : 'The membership plan below starts from this date, so the expiry and the payment reminder follow it.'}
+            </p>
           </div>
 
           {branches.length > 0 && (

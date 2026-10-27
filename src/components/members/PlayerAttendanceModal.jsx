@@ -61,8 +61,8 @@ export function PlayerAttendanceModal({
   }, [isOpen, effectiveMemberId, loadAttendance]);
 
   const registrationDate = useMemo(
-    () => toDateKey(activeMember?.created_at, timeZone),
-    [activeMember?.created_at, timeZone]
+    () => toDateKey(activeMember?.join_date ?? activeMember?.created_at, timeZone),
+    [activeMember?.join_date, activeMember?.created_at, timeZone]
   );
 
   // Present records only (with check-in time)

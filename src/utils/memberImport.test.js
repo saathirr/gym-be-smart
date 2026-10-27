@@ -5,6 +5,7 @@ import {
   normalizeGender,
   normalizeMemberRow,
   normalizeDateOfBirth,
+  normalizeJoinDate,
   canonicalPhoneKey,
   flagInFileDuplicates,
   flagExistingDuplicates,
@@ -456,6 +457,56 @@ describe('normalizeDateOfBirth', () => {
 
     expect(row.isValid).toBe(true);
     expect(row.date_of_birth).toBeNull();
+  });
+});
+
+describe('normalizeJoinDate', () => {
+  it('keeps an already formatted join date', () => {
+    expect(normalizeJoinDate('2025-01-05')).toEqual({ value: '2025-01-05', error: null });
+  });
+
+  it('converts a real date cell and reads the local day', () => {
+    expect(normalizeJoinDate(new Date(2025, 0, 5))).toEqual({
+      value: '2025-01-05',
+      error: null,
+    });
+  });
+
+  it('accepts the day-first form', () => {
+    expect(normalizeJoinDate('05/01/2025')).toEqual({ value: '2025-01-05', error: null });
+  });
+
+  it('names the join-date column when the value cannot be read', () => {
+    expect(normalizeJoinDate('34335').error).toBe('Invalid join date: 34335');
+  });
+
+  it('leaves a blank join date unset rather than inventing today', () => {
+    // The importer must not stamp every row with one date: that is the very
+    // problem the join date column exists to fix.
+    expect(normalizeJoinDate('')).toEqual({ value: null, error: null });
+    expect(normalizeJoinDate(undefined)).toEqual({ value: null, error: null });
+  });
+
+  it('carries the join date onto the normalised row', () => {
+    const row = normalizeMemberRow(sheetRow({ 'Join Date': '2025-03-02' }), 2);
+
+    expect(row.join_date).toBe('2025-03-02');
+    expect(row.isValid).toBe(true);
+  });
+
+  it('rejects the row when the join date cannot be read', () => {
+    const row = normalizeMemberRow(sheetRow({ 'Join Date': 'not a date' }), 2);
+
+    expect(row.isValid).toBe(false);
+    expect(row.join_date).toBeNull();
+    expect(row.errors).toContain('Invalid join date: not a date');
+  });
+
+  it('leaves the join date null when the column is absent', () => {
+    const row = normalizeMemberRow(sheetRow(), 2);
+
+    expect(row.join_date).toBeNull();
+    expect(row.isValid).toBe(true);
   });
 });
 
