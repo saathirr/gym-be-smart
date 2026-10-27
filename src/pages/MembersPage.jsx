@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   MessageCircle,
   Printer,
+  Users,
 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { Card } from '../components/ui/Card';
@@ -35,6 +36,7 @@ import { memberService } from '../services/memberService';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { storageService } from '../services/storageService';
 import { planService, pickDefaultPlan } from '../services/planService';
+import { supabase } from '../lib/supabase';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { useAuth } from '../hooks/useAuth';
 import { useGym } from '../hooks/useGym';
@@ -79,6 +81,13 @@ const selectClass =
 export function MembersPage() {
   const [members, setMembers] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [memberCounts, setMemberCounts] = useState({
+    total: 0,
+    active: 0,
+    expired: 0,
+    inactive: 0,
+    suspended: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -165,17 +174,38 @@ export function MembersPage() {
       setLoading(true);
       setError('');
 
-      const [memberRows, planRows] = await Promise.all([
+      const [
+        memberRows,
+        planRows,
+        totalRes,
+        activeRes,
+        expiredRes,
+        inactiveRes,
+        suspendedRes,
+      ] = await Promise.all([
         memberService.getMembers({
           search: debouncedSearch,
           status: statusFilter,
           branchId: branchFilter,
+          limit: 1000,
         }),
         planService.getPlans({ includeInactive: false }),
+        supabase.from('members').select('id', { count: 'exact', head: true }),
+        supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+        supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'Expired'),
+        supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'Inactive'),
+        supabase.from('members').select('id', { count: 'exact', head: true }).eq('status', 'Suspended'),
       ]);
 
       setMembers(memberRows);
       setPlans(planRows);
+      setMemberCounts({
+        total: totalRes.count ?? memberRows.length,
+        active: activeRes.count ?? 0,
+        expired: expiredRes.count ?? 0,
+        inactive: inactiveRes.count ?? 0,
+        suspended: suspendedRes.count ?? 0,
+      });
     } catch (err) {
       setError(toMessage(err, 'Could not load the member directory.'));
       setMembers([]);
@@ -435,7 +465,14 @@ export function MembersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Members"
+        title={
+          <div className="flex items-center gap-3">
+            <span>Members</span>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30">
+              {memberCounts.total} Total
+            </span>
+          </div>
+        }
         description="Register members, issue QR passes, and manage subscription status."
       >
         <div className="flex items-center gap-2">
@@ -451,6 +488,34 @@ export function MembersPage() {
           </Button>
         </div>
       </PageHeader>
+
+      {/* Member Count Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MemberStatCard
+          label="Total Members"
+          value={memberCounts.total}
+          icon={Users}
+          tone="text-brand-cyan"
+        />
+        <MemberStatCard
+          label="Active Members"
+          value={memberCounts.active}
+          icon={CheckCircle2}
+          tone="text-emerald-400"
+        />
+        <MemberStatCard
+          label="Expired"
+          value={memberCounts.expired}
+          icon={AlertCircle}
+          tone="text-rose-400"
+        />
+        <MemberStatCard
+          label="Inactive / Suspended"
+          value={memberCounts.inactive + memberCounts.suspended}
+          icon={XCircle}
+          tone="text-amber-400"
+        />
+      </div>
 
       {error && (
         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-start justify-between gap-3">
@@ -481,19 +546,41 @@ export function MembersPage() {
             <span className="text-xs text-slate-400 flex items-center gap-1">
               <Filter className="w-3.5 h-3.5" /> Status:
             </span>
-            {STATUSES.map((status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                  statusFilter === status
-                    ? 'bg-brand-cyan text-white shadow-md'
-                    : 'bg-gym-800 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {status}
-              </button>
-            ))}
+            {STATUSES.map((status) => {
+              const count =
+                status === 'ALL'
+                  ? memberCounts.total
+                  : status === 'Active'
+                  ? memberCounts.active
+                  : status === 'Expired'
+                  ? memberCounts.expired
+                  : status === 'Inactive'
+                  ? memberCounts.inactive
+                  : memberCounts.suspended;
+
+              return (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                    statusFilter === status
+                      ? 'bg-brand-cyan text-white shadow-md'
+                      : 'bg-gym-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span>{status}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                      statusFilter === status
+                        ? 'bg-white/20 text-white font-bold'
+                        : 'bg-gym-850 text-slate-400'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
 
             {branches.length > 1 && (
               <select
@@ -510,6 +597,17 @@ export function MembersPage() {
               </select>
             )}
           </div>
+        </div>
+
+        {/* Members Corner Count Summary */}
+        <div className="mt-3 pt-3 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+          <span className="text-slate-400">
+            Showing <strong className="text-slate-200 font-mono font-bold">{members.length}</strong> {members.length === 1 ? 'member' : 'members'}
+            {search ? ` matching "${search}"` : ''}
+          </span>
+          <span className="text-slate-500 font-medium">
+            Total registered in club: <strong className="text-brand-cyan font-mono font-bold">{memberCounts.total}</strong>
+          </span>
         </div>
       </Card>
 
@@ -1094,5 +1192,23 @@ export function MembersPage() {
         onImportComplete={handleBulkImport}
       />
     </div>
+  );
+}
+
+function MemberStatCard({ label, value, icon: Icon, tone }) {
+  return (
+    <Card className="p-4 bg-gym-900/80">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</p>
+          <p className={`text-2xl font-bold font-mono mt-1 ${tone}`}>{value}</p>
+        </div>
+        {Icon && (
+          <div className="w-9 h-9 rounded-xl bg-gym-850 flex items-center justify-center shrink-0">
+            <Icon className={`w-4 h-4 ${tone}`} />
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
