@@ -32,6 +32,7 @@ import { Modal } from '../components/ui/Modal';
 import { PhotoField } from '../components/members/PhotoField';
 import { PlayerAttendanceModal } from '../components/members/PlayerAttendanceModal';
 import { ImportMembersModal } from '../components/members/ImportMembersModal';
+import { DeleteMemberModal } from '../components/members/DeleteMemberModal';
 import { memberService } from '../services/memberService';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { storageService } from '../services/storageService';
@@ -100,6 +101,8 @@ export function MembersPage() {
   const [editingMember, setEditingMember] = useState(null);
   const [passMember, setPassMember] = useState(null);
   const [calendarMember, setCalendarMember] = useState(null);
+  const [memberToDelete, setMemberToDelete] = useState(null);
+  const [deleteSuccessMessage, setDeleteSuccessMessage] = useState('');
   // True only for a pass opened straight after a registration, so the modal can
   // confirm the pass was issued rather than re-showing an old one.
   const [passJustIssued, setPassJustIssued] = useState(false);
@@ -445,21 +448,30 @@ export function MembersPage() {
     }
   };
 
-  const handleDeleteMember = async (member) => {
-    if (
-      !window.confirm(
-        `Delete ${member.full_name}? Their attendance and payment history will be removed too.`
-      )
-    ) {
-      return;
-    }
+  const handleDeleteMember = (member) => {
+    setMemberToDelete(member);
+  };
 
-    try {
-      await memberService.deleteMember(member.id);
-      await loadData();
-    } catch (err) {
-      setError(toMessage(err, 'Could not delete this member.'));
-    }
+  const handleMemberDeleted = (deletedMember) => {
+    setDeleteSuccessMessage(
+      `${deletedMember.full_name || 'Member'} (${deletedMember.member_code || ''}) has been permanently deleted from the database and system.`
+    );
+    setMembers((prev) => prev.filter((m) => m.id !== deletedMember.id));
+    setMemberCounts((prev) => {
+      const isAct = deletedMember.status === 'Active';
+      const isExp = deletedMember.status === 'Expired';
+      const isSusp = deletedMember.status === 'Suspended';
+      const isDeact = deletedMember.status === 'Inactive';
+      return {
+        total: Math.max(0, prev.total - 1),
+        active: isAct ? Math.max(0, prev.active - 1) : prev.active,
+        expired: isExp ? Math.max(0, prev.expired - 1) : prev.expired,
+        suspended: isSusp ? Math.max(0, prev.suspended - 1) : prev.suspended,
+        inactive: isDeact ? Math.max(0, prev.inactive - 1) : prev.inactive,
+      };
+    });
+    setMemberToDelete(null);
+    loadData();
   };
 
   return (
@@ -516,6 +528,22 @@ export function MembersPage() {
           tone="text-amber-400"
         />
       </div>
+
+      {deleteSuccessMessage && (
+        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start justify-between gap-3 animate-fade-in">
+          <div className="flex items-start gap-2 text-xs text-emerald-400">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" />
+            <span>{deleteSuccessMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteSuccessMessage('')}
+            className="text-emerald-400/70 hover:text-emerald-300 text-xs font-medium cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-start justify-between gap-3">
@@ -791,15 +819,14 @@ export function MembersPage() {
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
                         )}
                       </button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => handleDeleteMember(member)}
-                          className="p-1.5 ml-1 rounded-lg bg-gym-800 hover:bg-rose-500/20 text-rose-400 transition"
-                          title="Delete member"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMember(member)}
+                        className="p-1.5 ml-1 rounded-lg bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-400 border border-rose-500/20 hover:border-rose-500 transition"
+                        title={`Delete ${member.full_name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </td>
                   </tr>
                   );
@@ -828,32 +855,53 @@ export function MembersPage() {
               </div>
             )}
 
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                variant="secondary"
-                onClick={() => setIsAddModalOpen(false)}
-                className="w-full sm:w-auto"
-              >
-                Cancel
-              </Button>
-              {/* This button sits in the dialog footer, which is outside the form
-                  element, so it is attached to the form by id rather than by
-                  nesting. Native constraint validation is unaffected: submitting
-                  this way runs the same validation on the same form, so a missing
-                  required field still blocks the save and focuses the input. */}
-              <Button
-                type="submit"
-                form="member-form"
-                variant="primary"
-                disabled={submitting}
-                className="w-full sm:w-auto"
-              >
-                {submitting
-                  ? 'Saving...'
-                  : editingMember
-                  ? 'Save changes'
-                  : 'Register and issue pass'}
-              </Button>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
+              {editingMember ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  icon={Trash2}
+                  onClick={() => {
+                    const toDelete = editingMember;
+                    setIsAddModalOpen(false);
+                    setMemberToDelete(toDelete);
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  Delete Member
+                </Button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end w-full sm:w-auto">
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="w-full sm:w-auto"
+                >
+                  Cancel
+                </Button>
+                {/* This button sits in the dialog footer, which is outside the form
+                    element, so it is attached to the form by id rather than by
+                    nesting. Native constraint validation is unaffected: submitting
+                    this way runs the same validation on the same form, so a missing
+                    required field still blocks the save and focuses the input. */}
+                <Button
+                  type="submit"
+                  form="member-form"
+                  variant="primary"
+                  disabled={submitting}
+                  className="w-full sm:w-auto"
+                >
+                  {submitting
+                    ? 'Saving...'
+                    : editingMember
+                    ? 'Save changes'
+                    : 'Register and issue pass'}
+                </Button>
+              </div>
             </div>
           </div>
         }
@@ -1190,6 +1238,14 @@ export function MembersPage() {
         plans={plans}
         currency={currency}
         onImportComplete={handleBulkImport}
+      />
+
+      <DeleteMemberModal
+        isOpen={Boolean(memberToDelete)}
+        onClose={() => setMemberToDelete(null)}
+        member={memberToDelete}
+        photoUrl={memberToDelete?.avatar_url ? photoUrls[memberToDelete.avatar_url] : null}
+        onDeleted={handleMemberDeleted}
       />
     </div>
   );

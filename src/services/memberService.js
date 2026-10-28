@@ -4,6 +4,7 @@ import { addDays, toDateKey } from '../utils/attendanceMath';
 import { phoneSearchVariants } from '../utils/phone';
 import { canonicalPhoneKey } from '../utils/memberImport';
 import { storageService } from './storageService';
+import { activityLogService } from './activityLogService';
 
 const MEMBER_SELECT = `
   id,
@@ -578,9 +579,98 @@ export const memberService = {
     return true;
   },
 
-  async deleteMember(id) {
-    const { error } = await supabase.from('members').delete().eq('id', id);
-    if (error) throw toMessage(error);
+  /**
+   * Permanently deletes a member and cleans up their data from the database and system.
+   *
+   * Database cascade rules automatically remove linked rows in memberships, attendance,
+   * payments, and payment reminders. This method additionally removes the member's avatar
+   * photo from Supabase Storage and records the deletion in the activity audit trail.
+   */
+  async deleteMember(id, { avatarUrl = null, member = null, user = null } = {}) {
+    if (!id) throw new Error('A member ID is required.');
+
+    let photoPath = avatarUrl || member?.avatar_url;
+    let memberDetails = member;
+
+    // If details were not provided, fetch them before deletion for logging and storage cleanup
+    if (!memberDetails || (photoPath === undefined && photoPath !== null)) {
+      try {
+        const { data } = await supabase
+          .from('members')
+          .select('id, full_name, member_code, nic_number, phone, avatar_url')
+          .eq('id', id)
+          .maybeSingle();
+        if (data) {
+          memberDetails = memberDetails || data;
+          if (!photoPath && data.avatar_url) photoPath = data.avatar_url;
+        }
+      } catch {
+        // Continue even if lookup fails
+      }
+    }
+
+    // Prefer atomic delete_member_completely RPC, fall back to direct table delete
+    let deleteSucceeded = false;
+    let deleteError = null;
+
+    try {
+      const { error: rpcError } = await supabase.rpc('delete_member_completely', {
+        p_member_id: id,
+      });
+
+      if (!rpcError) {
+        deleteSucceeded = true;
+      } else if (!isMissingFunction(rpcError)) {
+        deleteError = rpcError;
+      }
+    } catch {
+      // Fall through to direct table delete
+    }
+
+    if (!deleteSucceeded && !deleteError) {
+      const { error } = await supabase.from('members').delete().eq('id', id);
+      if (error) {
+        deleteError = error;
+      } else {
+        deleteSucceeded = true;
+      }
+    }
+
+    if (deleteError) {
+      throw toMessage(deleteError, 'Could not delete this member from the database.');
+    }
+
+    // Clean up uploaded avatar photo from private cloud storage
+    if (photoPath && storageService?.deletePhoto) {
+      try {
+        await storageService.deletePhoto(photoPath);
+      } catch (e) {
+        console.warn('Could not remove member photo during deletion:', e);
+      }
+    }
+
+    // Record deletion in activity logs
+    try {
+      await activityLogService.logActivity({
+        action: 'MEMBER_DELETED',
+        category: 'Members',
+        entityType: 'Member',
+        entityId: id,
+        details: `Deleted member ${memberDetails?.full_name || ''} (${memberDetails?.member_code || id}) and removed associated records`,
+        changes: memberDetails
+          ? {
+              full_name: memberDetails.full_name,
+              member_code: memberDetails.member_code,
+              phone: memberDetails.phone,
+              nic_number: memberDetails.nic_number,
+            }
+          : null,
+        user,
+      });
+    } catch (e) {
+      console.warn('Could not record member deletion in activity log:', e);
+    }
+
     return true;
   },
 

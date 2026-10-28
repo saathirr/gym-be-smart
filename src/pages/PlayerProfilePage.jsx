@@ -16,8 +16,10 @@ import {
   Pencil,
   QrCode,
   UserRound,
+  Trash2,
 } from 'lucide-react';
 import { memberService } from '../services/memberService';
+import { DeleteMemberModal } from '../components/members/DeleteMemberModal';
 import { useAuth } from '../hooks/useAuth';
 import { attendanceService, getClubToday } from '../services/attendanceService';
 import { settingsService } from '../services/settingsService';
@@ -108,6 +110,7 @@ export function PlayerProfilePage() {
   const [joinDateInput, setJoinDateInput] = useState('');
   const [joinDateSaving, setJoinDateSaving] = useState(false);
   const [joinDateError, setJoinDateError] = useState('');
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const openJoinDateModal = () => {
     // Prefill from the stored join date, falling back to the derived one so the
@@ -272,7 +275,17 @@ export function PlayerProfilePage() {
           <h1 className="text-xl font-semibold text-slate-100">Player profile</h1>
         </div>
 
-        <Badge variant={statusVariant(member.status)}>{member.status}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={statusVariant(member.status)}>{member.status}</Badge>
+          <Button
+            variant="danger"
+            size="sm"
+            icon={Trash2}
+            onClick={() => setIsDeleteModalOpen(true)}
+          >
+            Delete Member
+          </Button>
+        </div>
       </div>
 
       {/* Section nav. Sticky so the record stays navigable however long the
@@ -565,6 +578,13 @@ export function PlayerProfilePage() {
           </div>
         </div>
       </Modal>
+
+      <DeleteMemberModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        member={member}
+        onDeleted={() => navigate('/members')}
+      />
     </div>
   );
 }
