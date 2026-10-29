@@ -168,6 +168,9 @@ export function PlayerProfilePage() {
       try {
         const rows = await attendanceService.getMemberAttendance({ memberId: id });
         setAttendanceRows(rows);
+      } catch (attErr) {
+        console.warn('Could not load member attendance history:', attErr);
+        setAttendanceRows([]);
       } finally {
         setAttendanceLoading(false);
       }

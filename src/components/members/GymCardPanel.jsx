@@ -156,7 +156,7 @@ function Row({ label, value, className }) {
  */
 export function GymCardPanel({ member, gymName, className }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [waNotice, setWaNotice] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -197,7 +197,7 @@ export function GymCardPanel({ member, gymName, className }) {
     } catch (err) {
       setError(err.message || 'The JPG card could not be generated.');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -213,7 +213,7 @@ export function GymCardPanel({ member, gymName, className }) {
     } catch (err) {
       setError(err.message || 'The PDF card could not be created.');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -242,7 +242,7 @@ export function GymCardPanel({ member, gymName, className }) {
     } catch (err) {
       setError(err.message || 'Failed to share gym card via WhatsApp.');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -300,7 +300,7 @@ export function GymCardPanel({ member, gymName, className }) {
             onClick={() => handleWhatsApp('jpg')}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium border-emerald-500/30"
           >
-            {busy?.startsWith('wa') ? 'Sending...' : 'Send on WhatsApp'}
+            {typeof busy === 'string' && busy.startsWith('wa') ? 'Sending...' : 'Send on WhatsApp'}
           </Button>
 
           <Button
@@ -388,7 +388,7 @@ export function GymCardPanel({ member, gymName, className }) {
                 onClick={() => handleWhatsApp('jpg')}
                 className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white"
               >
-                {busy?.startsWith('wa') ? 'Sending...' : 'WhatsApp Card'}
+                {typeof busy === 'string' && busy.startsWith('wa') ? 'Sending...' : 'WhatsApp Card'}
               </Button>
             </div>
           </div>

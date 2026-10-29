@@ -63,7 +63,19 @@ const ATTENDANCE_SELECT_P7 = ATTENDANCE_SELECT
 const ATTENDANCE_SELECT_P6 = ATTENDANCE_SELECT_P7.replace(/\n\s*checkout_method,/, '');
 
 function isMissingColumn(error) {
-  return error?.code === '42703' || error?.code === 'PGRST204';
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || error.details || '').toLowerCase();
+  return (
+    code === '42703' ||
+    code === 'PGRST204' ||
+    code === 'PGRST200' ||
+    code === 'PGRST100' ||
+    msg.includes('column') ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find') ||
+    msg.includes('schema cache')
+  );
 }
 
 // The row's sessions in order: the first visit, then the optional second one.
