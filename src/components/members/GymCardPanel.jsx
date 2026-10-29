@@ -4,8 +4,9 @@ import {
   Check,
   CheckCircle2,
   Copy,
-  Download,
   Eye,
+  FileText,
+  Image as ImageIcon,
   MessageCircle,
   ShieldAlert,
 } from 'lucide-react';
@@ -16,9 +17,11 @@ import {
   buildGymCardData,
   formatFirstLastName,
   gymCardFileName,
+  gymCardImageFileName,
 } from '../../utils/gymCard';
 import { formatPhone, normalisePhone } from '../../utils/phone';
 import { downloadGymCardPdf, shareGymCardPdfWhatsApp } from '../../lib/gymCardPdf';
+import { downloadGymCardJpg, shareGymCardJpgWhatsApp } from '../../lib/gymCardImage';
 import { storageService } from '../../services/storageService';
 import { LOGO_SRC } from '../../utils/brand';
 import { cn } from '../../utils/cn';
@@ -28,7 +31,7 @@ const CARD_ASPECT = '85.6 / 54';
 
 /**
  * Realistic CR80 landscape gym card face.
- * Matches the generated PDF layout, margins, and letter spacing.
+ * Matches the generated PDF & JPG layout, margins, and letter spacing.
  */
 function CardFace({ card, photoUrl = null, qrSize = 74, className }) {
   const live = card.membershipStatus === 'Active' || card.membershipStatus === 'Expiring';
@@ -149,7 +152,7 @@ function Row({ label, value, className }) {
 }
 
 /**
- * Gym Card Panel with Live Preview, direct WhatsApp PDF sharing, and clear navigation.
+ * Gym Card Panel with Live Preview, JPG image download, PDF download, and WhatsApp sharing.
  */
 export function GymCardPanel({ member, gymName, className }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -182,8 +185,24 @@ export function GymCardPanel({ member, gymName, className }) {
   const whatsApp = normalisePhone(member.whatsapp_number || member.phone);
   const canShare = Boolean(whatsApp.isValid);
 
-  async function handleDownload() {
-    setBusy(true);
+  async function handleDownloadJpg() {
+    setBusy('jpg');
+    setError(null);
+    try {
+      const freshPhotoUrl = member.avatar_url
+        ? await storageService.getPhotoUrl(member.avatar_url)
+        : null;
+
+      await downloadGymCardJpg(member, { gymName, photoUrl: freshPhotoUrl });
+    } catch (err) {
+      setError(err.message || 'The JPG card could not be generated.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDownloadPdf() {
+    setBusy('pdf');
     setError(null);
     try {
       const freshPhotoUrl = member.avatar_url
@@ -192,14 +211,14 @@ export function GymCardPanel({ member, gymName, className }) {
 
       await downloadGymCardPdf(member, { gymName, photoUrl: freshPhotoUrl });
     } catch (err) {
-      setError(err.message || 'The card could not be created.');
+      setError(err.message || 'The PDF card could not be created.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleWhatsAppPdf() {
-    setBusy(true);
+  async function handleWhatsApp(format = 'jpg') {
+    setBusy(`wa-${format}`);
     setError(null);
     setWaNotice(null);
     try {
@@ -207,20 +226,21 @@ export function GymCardPanel({ member, gymName, className }) {
         ? await storageService.getPhotoUrl(member.avatar_url)
         : null;
 
-      const result = await shareGymCardPdfWhatsApp(member, {
-        gymName,
-        photoUrl: freshPhotoUrl,
-      });
+      const result =
+        format === 'pdf'
+          ? await shareGymCardPdfWhatsApp(member, { gymName, photoUrl: freshPhotoUrl })
+          : await shareGymCardJpgWhatsApp(member, { gymName, photoUrl: freshPhotoUrl });
 
+      const label = format.toUpperCase();
       if (result?.method === 'web-fallback') {
         setWaNotice(
-          'PDF card downloaded & WhatsApp chat opened! Simply drag or attach (📎) the downloaded PDF into WhatsApp to send it.'
+          `${label} card downloaded & WhatsApp chat opened! Simply drag or attach (📎) the downloaded ${label} into WhatsApp.`
         );
       } else if (result?.method === 'direct') {
-        setWaNotice('Gym Card PDF sent directly to WhatsApp!');
+        setWaNotice(`Gym Card ${label} sent directly to WhatsApp!`);
       }
     } catch (err) {
-      setError(err.message || 'Failed to share gym card PDF via WhatsApp.');
+      setError(err.message || 'Failed to share gym card via WhatsApp.');
     } finally {
       setBusy(false);
     }
@@ -240,7 +260,7 @@ export function GymCardPanel({ member, gymName, className }) {
     <>
       <div className={cn('space-y-4', className)}>
         {/* Main Action Bar */}
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button
             size="sm"
             variant="secondary"
@@ -253,22 +273,34 @@ export function GymCardPanel({ member, gymName, className }) {
 
           <Button
             size="sm"
-            icon={Download}
-            disabled={busy}
-            onClick={handleDownload}
+            icon={ImageIcon}
+            disabled={Boolean(busy)}
+            onClick={handleDownloadJpg}
+            className="font-medium"
           >
-            {busy ? 'Preparing...' : 'Download PDF'}
+            {busy === 'jpg' ? 'Generating...' : 'Download JPG'}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={FileText}
+            disabled={Boolean(busy)}
+            onClick={handleDownloadPdf}
+            className="font-medium"
+          >
+            {busy === 'pdf' ? 'Preparing...' : 'Download PDF'}
           </Button>
 
           <Button
             size="sm"
             variant="primary"
             icon={MessageCircle}
-            disabled={!canShare || busy}
-            onClick={handleWhatsAppPdf}
+            disabled={!canShare || Boolean(busy)}
+            onClick={() => handleWhatsApp('jpg')}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium border-emerald-500/30"
           >
-            {busy ? 'Preparing...' : 'Send PDF on WhatsApp'}
+            {busy?.startsWith('wa') ? 'Sending...' : 'Send on WhatsApp'}
           </Button>
 
           <Button
@@ -293,7 +325,7 @@ export function GymCardPanel({ member, gymName, className }) {
 
         {canShare && !waNotice && (
           <p className="text-xs text-slate-400">
-            Click <strong className="text-emerald-400">Send PDF on WhatsApp</strong> to attach and send the official gym card PDF directly to{' '}
+            Click <strong className="text-emerald-400">Download JPG</strong> for instant image file, or <strong className="text-emerald-400">Send on WhatsApp</strong> to share directly with{' '}
             <span className="font-mono text-slate-300">{formatPhone(member.whatsapp_number || member.phone)}</span>.
           </p>
         )}
@@ -313,38 +345,50 @@ export function GymCardPanel({ member, gymName, className }) {
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         title="Gym Membership Card Preview"
-        className="w-[min(480px,96vw)] max-w-none"
+        className="w-[min(540px,96vw)] max-w-none"
         footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between w-full">
+          <div className="flex flex-col-reverse gap-2.5 sm:flex-row sm:items-center sm:justify-between w-full">
             <Button
               variant="secondary"
               size="sm"
               icon={ArrowLeft}
               onClick={() => setIsOpen(false)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto font-medium"
             >
               Back to Member Profile
             </Button>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
-                icon={Download}
-                disabled={busy}
-                onClick={handleDownload}
+                icon={ImageIcon}
+                disabled={Boolean(busy)}
+                onClick={handleDownloadJpg}
                 className="w-full sm:w-auto"
               >
-                {busy ? 'Preparing...' : 'Download PDF'}
+                {busy === 'jpg' ? 'Generating...' : 'Download JPG'}
               </Button>
+
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={FileText}
+                disabled={Boolean(busy)}
+                onClick={handleDownloadPdf}
+                className="w-full sm:w-auto"
+              >
+                {busy === 'pdf' ? 'Preparing...' : 'Download PDF'}
+              </Button>
+
               <Button
                 size="sm"
                 variant="primary"
                 icon={MessageCircle}
-                disabled={!canShare || busy}
-                onClick={handleWhatsAppPdf}
+                disabled={!canShare || Boolean(busy)}
+                onClick={() => handleWhatsApp('jpg')}
                 className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white"
               >
-                {busy ? 'Preparing...' : 'WhatsApp PDF'}
+                {busy?.startsWith('wa') ? 'Sending...' : 'WhatsApp Card'}
               </Button>
             </div>
           </div>
@@ -359,7 +403,13 @@ export function GymCardPanel({ member, gymName, className }) {
           {/* Card & Member Info Details */}
           <div className="text-xs text-slate-400 space-y-1.5 p-3 rounded-lg bg-gym-900/60 border border-hairline">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">File Name:</span>
+              <span className="text-slate-500">Image File:</span>
+              <span className="font-mono text-slate-200 text-[11px] truncate max-w-[260px]">
+                {gymCardImageFileName(member, { gymName, ext: 'jpg' })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">PDF Document:</span>
               <span className="font-mono text-slate-200 text-[11px] truncate max-w-[260px]">
                 {gymCardFileName(member, { gymName })}
               </span>
@@ -400,3 +450,4 @@ export function GymCardPanel({ member, gymName, className }) {
 }
 
 export { CardFace };
+

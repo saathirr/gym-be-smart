@@ -14,6 +14,7 @@ import {
   buildWhatsAppMessage,
   formatFirstLastName,
   gymCardFileName,
+  gymCardImageFileName,
   initialsOf,
   isMembershipLive,
   slugify,
@@ -197,6 +198,25 @@ describe('gymCardFileName', () => {
     expect(name).not.toContain('/');
     expect(name).not.toContain('..');
     expect(name.endsWith('.pdf')).toBe(true);
+  });
+});
+
+describe('gymCardImageFileName', () => {
+  it('is derived from the club and member code with jpg extension', () => {
+    expect(gymCardImageFileName(member)).toBe('be-smart-fitness-club-gym-card-bsg-1001.jpg');
+  });
+
+  it('supports custom extension like png', () => {
+    expect(gymCardImageFileName(member, { ext: 'png' })).toBe(
+      'be-smart-fitness-club-gym-card-bsg-1001.png'
+    );
+  });
+
+  it('falls back to the name, then to a generic image filename', () => {
+    expect(gymCardImageFileName({ full_name: 'A B' })).toBe(
+      'be-smart-fitness-club-gym-card-a-b.jpg'
+    );
+    expect(gymCardImageFileName({})).toBe('be-smart-fitness-club-gym-card.jpg');
   });
 });
 

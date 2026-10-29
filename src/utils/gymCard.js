@@ -146,6 +146,17 @@ export function gymCardFileName(member, { gymName = CLUB_DISPLAY_NAME } = {}) {
   return `${slugify(gymName)}-gym-card.pdf`;
 }
 
+// 'be-smart-fitness-club-gym-card-bsg-1001.jpg'
+export function gymCardImageFileName(member, { gymName = CLUB_DISPLAY_NAME, ext = 'jpg' } = {}) {
+  const code = member?.member_code;
+  if (code) return `${slugify(gymName)}-gym-card-${slugify(code)}.${ext}`;
+
+  const name = member?.full_name;
+  if (name) return `${slugify(gymName)}-gym-card-${slugify(name)}.${ext}`;
+
+  return `${slugify(gymName)}-gym-card.${ext}`;
+}
+
 /**
  * The message staff send with the card PDF.
  *
