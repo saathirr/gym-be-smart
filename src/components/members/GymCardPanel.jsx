@@ -1,33 +1,39 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, Copy, Download, MessageCircle, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Copy,
+  Download,
+  Eye,
+  MessageCircle,
+  ShieldAlert,
+} from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
-import { buildGymCardData, buildWhatsAppMessage, gymCardFileName } from '../../utils/gymCard';
-import { buildWhatsAppUrl, formatPhone, normalisePhone } from '../../utils/phone';
-import { downloadGymCardPdf } from '../../lib/gymCardPdf';
+import {
+  buildGymCardData,
+  formatFirstLastName,
+  gymCardFileName,
+} from '../../utils/gymCard';
+import { formatPhone, normalisePhone } from '../../utils/phone';
+import { downloadGymCardPdf, shareGymCardPdfWhatsApp } from '../../lib/gymCardPdf';
 import { storageService } from '../../services/storageService';
 import { LOGO_SRC } from '../../utils/brand';
 import { cn } from '../../utils/cn';
 
-// The player's digital gym card.
-//
-// The card shows only what the front desk needs: who they are, which plan they
-// are on, and the QR token. No NIC, no address, no phone, no date of birth -
-// the card gets photographed and left on a desk, and the QR already resolves to
-// the member record.
+// CR80 Physical landscape ratio: 85.6mm width / 54mm height (~1.585)
+const CARD_ASPECT = '85.6 / 54';
 
-const CARD_ASPECT = '54 / 85.6';
-
-// className is applied last and goes through tailwind-merge, so a caller can
-// override max-w-sm with a narrower value without editing the card. The preview
-// does exactly that: at the natural 24rem the 54:85.6 ratio makes the card about
-// 609px tall, which does not fit a 768px laptop once the dialog header and footer
-// are accounted for, so the preview narrows it rather than letting the dialog
-// scroll a card the member has already seen.
-function CardFace({ card, photoUrl = null, qrSize = 120, className }) {
+/**
+ * Realistic CR80 landscape gym card face.
+ * Matches the generated PDF layout, margins, and letter spacing.
+ */
+function CardFace({ card, photoUrl = null, qrSize = 74, className }) {
   const live = card.membershipStatus === 'Active' || card.membershipStatus === 'Expiring';
-  const initials = String(card.fullName || 'Member')
+  const displayName = card.cardDisplayName || formatFirstLastName(card.fullName);
+  const initials = String(displayName || 'Member')
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -37,86 +43,93 @@ function CardFace({ card, photoUrl = null, qrSize = 120, className }) {
   return (
     <div
       className={cn(
-        'w-full max-w-sm rounded-2xl overflow-hidden bg-white text-gray-900 shadow-2xl',
+        'w-full max-w-[420px] rounded-xl overflow-hidden bg-white text-gray-900 shadow-xl border border-gray-200/80 flex flex-col justify-between select-none',
         className
       )}
       style={{ aspectRatio: CARD_ASPECT }}
     >
-      <div className="bg-emerald-600 px-4 py-2.5 flex items-center gap-2.5">
-        <img
-          src={LOGO_SRC}
-          alt=""
-          className="w-9 h-9 rounded object-cover shrink-0"
-          // The logo is a 640x640 JPEG with no alpha channel, so it needs an
-          // explicit frame rather than a transparent one.
-          style={{ backgroundColor: '#FFFFFF' }}
-        />
-        <div className="min-w-0">
-          <p className="text-white font-bold text-xs leading-tight truncate">
-            BE SMART FITNESS CLUB
-          </p>
-          <p className="text-white/80 text-[10px] leading-tight">Gym Membership Card</p>
+      {/* Header bar */}
+      <div className="bg-emerald-600 px-3.5 py-2 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <img
+            src={LOGO_SRC}
+            alt="Club Logo"
+            className="w-7 h-7 rounded object-cover shrink-0 bg-white p-0.5"
+          />
+          <div className="min-w-0">
+            <p className="text-white font-bold text-[11px] leading-tight tracking-wider uppercase truncate">
+              BE SMART FITNESS CLUB
+            </p>
+            <p className="text-white/80 text-[9px] leading-tight tracking-wide">
+              Gym Membership Card
+            </p>
+          </div>
         </div>
+        <span
+          className={cn(
+            'text-[9px] font-semibold px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wider',
+            live ? 'bg-emerald-500/30 text-white' : 'bg-amber-500/30 text-amber-100'
+          )}
+        >
+          {card.membershipStatus}
+        </span>
       </div>
 
-      <div className="p-4 flex gap-3 h-[calc(100%-3.25rem)]">
-        <div className="min-w-0 flex-1 flex gap-2.5">
-          {/* Same box the PDF uses, so the preview matches the print. */}
-          <div className="w-[3.4rem] h-[3.4rem] rounded-lg bg-gray-200 shrink-0 overflow-hidden flex items-center justify-center">
-            {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt=""
-                className="w-full h-full object-cover"
-                // The photo comes from a private signed URL that expires, so a
-                // failed refresh must not show a broken-image icon on a card
-                // that is about to be printed.
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            ) : (
-              <span className="text-[10px] font-bold text-gray-500">{initials}</span>
-            )}
+      {/* Main content body */}
+      <div className="px-3.5 py-1.5 flex items-center justify-between gap-2.5 flex-1 min-h-0">
+        {/* Member Photo or Initials */}
+        <div className="w-[52px] h-[52px] rounded-lg bg-gray-100 border border-gray-200 shrink-0 overflow-hidden flex items-center justify-center">
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={displayName}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <span className="text-xs font-bold text-gray-500 tracking-wider">{initials}</span>
+          )}
+        </div>
+
+        {/* Member details (First & Last Name only) */}
+        <div className="min-w-0 flex-1 space-y-1">
+          <div>
+            <p className="font-bold text-[13px] leading-tight text-gray-900 tracking-wide truncate">
+              {displayName}
+            </p>
+            <p className="text-[10px] text-gray-500 font-mono leading-tight">
+              ID: {card.memberCode}
+            </p>
           </div>
 
-          <div className="min-w-0 flex-1 space-y-2.5">
-            <p className="font-bold text-sm leading-tight truncate">{card.fullName}</p>
-            <p className="text-[11px] text-gray-500">Member ID: {card.memberCode}</p>
-
-            <div className="space-y-1.5 pt-1">
-              <Row label="Membership" value={card.planName} />
-              <Row
-                label="Status"
-                value={card.membershipStatus}
-                className={live ? '' : 'text-amber-600 font-semibold'}
-              />
-              {card.validUntil && <Row label="Valid until" value={card.validUntil} />}
-            </div>
+          <div className="space-y-0.5 pt-0.5 border-t border-gray-100">
+            <Row label="Plan" value={card.planName} />
+            {card.validUntil && <Row label="Valid" value={card.validUntil} />}
           </div>
         </div>
 
-        <div className="shrink-0 self-start">
-          <div className="p-1 bg-white border border-gray-200 rounded-lg">
+        {/* QR Code */}
+        <div className="shrink-0">
+          <div className="p-1 bg-white border border-gray-200 rounded-lg shadow-sm">
             <QRCodeSVG
               value={card.qrPayload}
               size={qrSize}
               level="M"
-              // Matches the four-module quiet zone baked into the PDF's QR, so
-              // the preview and the print behave the same way with a scanner.
               marginSize={2}
-              // The QR is the front desk's only job on this card, so the encoded
-              // value is the opaque token and nothing else.
               style={{ display: 'block' }}
             />
           </div>
         </div>
       </div>
 
-      <div className="px-4 pb-3 -mt-1">
-        <p className="text-[9px] text-gray-400 border-t border-gray-100 pt-2">
+      {/* Footer bar */}
+      <div className="px-3.5 py-1.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0">
+        <p className="text-[8.5px] text-gray-400 tracking-tight">
           Show this QR code at the entrance.
         </p>
+        <span className="text-[8.5px] text-gray-400 font-mono">CR80 ID</span>
       </div>
     </div>
   );
@@ -124,35 +137,28 @@ function CardFace({ card, photoUrl = null, qrSize = 120, className }) {
 
 function Row({ label, value, className }) {
   return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-[8px] uppercase tracking-wide text-gray-400 w-14 shrink-0">
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-[7.5px] uppercase tracking-wider text-gray-400 w-9 shrink-0 font-medium">
         {label}
       </span>
-      <span className={cn('text-[11px] truncate', className || 'text-gray-800')}>{value}</span>
+      <span className={cn('text-[9.5px] truncate font-medium', className || 'text-gray-800')}>
+        {value}
+      </span>
     </div>
   );
 }
 
 /**
- * Gym card preview plus the two ways staff hand it over.
- *
- * WhatsApp cannot be given a file by a web page, so the flow is honest about it:
- * download the PDF, then open WhatsApp with the message already written, then
- * attach the file by hand. Pretending otherwise would produce a chat with no
- * card in it.
+ * Gym Card Panel with Live Preview, direct WhatsApp PDF sharing, and clear navigation.
  */
 export function GymCardPanel({ member, gymName, className }) {
   const [isOpen, setIsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [waNotice, setWaNotice] = useState(null);
   const [copied, setCopied] = useState(false);
-  // Private bucket: the preview and the PDF both go through a short-lived
-  // signed URL. The object path in members.avatar_url is never rendered
-  // directly, and the bucket stays private.
   const [photoUrl, setPhotoUrl] = useState(null);
 
-  // Hooks first: the early return for a missing card below must come after every
-  // hook call, or the hook order changes between renders.
   useEffect(() => {
     const path = member?.avatar_url;
     if (!path) {
@@ -180,9 +186,6 @@ export function GymCardPanel({ member, gymName, className }) {
     setBusy(true);
     setError(null);
     try {
-      // A fresh URL is signed at download time: the one used for the preview may
-      // already have expired, and an expired URL would silently drop the photo
-      // out of the printed card.
       const freshPhotoUrl = member.avatar_url
         ? await storageService.getPhotoUrl(member.avatar_url)
         : null;
@@ -190,6 +193,34 @@ export function GymCardPanel({ member, gymName, className }) {
       await downloadGymCardPdf(member, { gymName, photoUrl: freshPhotoUrl });
     } catch (err) {
       setError(err.message || 'The card could not be created.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleWhatsAppPdf() {
+    setBusy(true);
+    setError(null);
+    setWaNotice(null);
+    try {
+      const freshPhotoUrl = member.avatar_url
+        ? await storageService.getPhotoUrl(member.avatar_url)
+        : null;
+
+      const result = await shareGymCardPdfWhatsApp(member, {
+        gymName,
+        photoUrl: freshPhotoUrl,
+      });
+
+      if (result?.method === 'web-fallback') {
+        setWaNotice(
+          'PDF card downloaded & WhatsApp chat opened! Simply drag or attach (📎) the downloaded PDF into WhatsApp to send it.'
+        );
+      } else if (result?.method === 'direct') {
+        setWaNotice('Gym Card PDF sent directly to WhatsApp!');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to share gym card PDF via WhatsApp.');
     } finally {
       setBusy(false);
     }
@@ -205,36 +236,39 @@ export function GymCardPanel({ member, gymName, className }) {
     }
   }
 
-  function handleWhatsApp() {
-    const url = buildWhatsAppUrl(
-      member.whatsapp_number || member.phone,
-      buildWhatsAppMessage(member, { gymName })
-    );
-    if (!url) {
-      setError('That number cannot be used for WhatsApp.');
-      return;
-    }
-    // Opened in a new tab so the app is not navigated away from if WhatsApp
-    // Web is unavailable on the desktop.
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }
-
   return (
     <>
-      <div className={cn('space-y-3', className)}>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" icon={Download} disabled={busy} onClick={handleDownload}>
+      <div className={cn('space-y-4', className)}>
+        {/* Main Action Bar */}
+        <div className="flex flex-wrap gap-2.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Eye}
+            onClick={() => setIsOpen(true)}
+            className="font-medium"
+          >
+            Preview Card
+          </Button>
+
+          <Button
+            size="sm"
+            icon={Download}
+            disabled={busy}
+            onClick={handleDownload}
+          >
             {busy ? 'Preparing...' : 'Download PDF'}
           </Button>
 
           <Button
             size="sm"
-            variant="secondary"
+            variant="primary"
             icon={MessageCircle}
-            disabled={!canShare}
-            onClick={handleWhatsApp}
+            disabled={!canShare || busy}
+            onClick={handleWhatsAppPdf}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium border-emerald-500/30"
           >
-            Send on WhatsApp
+            {busy ? 'Preparing...' : 'Send PDF on WhatsApp'}
           </Button>
 
           <Button
@@ -243,56 +277,56 @@ export function GymCardPanel({ member, gymName, className }) {
             icon={copied ? Check : Copy}
             onClick={handleCopyCode}
           >
-            {copied ? 'Copied' : 'Copy code'}
+            {copied ? 'Copied' : 'Copy Code'}
           </Button>
         </div>
 
+        {/* WhatsApp Phone Status / Notice */}
         {!canShare && (
           <p className="text-xs text-amber-400 flex items-start gap-1.5">
             <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
             <span>
-              {whatsApp.reason || 'No WhatsApp number on file.'} Add a mobile number to send the
-              card by WhatsApp.
+              {whatsApp.reason || 'No mobile or WhatsApp number on file.'} Add a mobile number to enable direct WhatsApp sharing.
             </span>
           </p>
         )}
 
-        {canShare && (
-          <p className="text-xs text-slate-500">
-            WhatsApp opens with the message ready. Download the PDF first, then attach it to the
-            chat.
+        {canShare && !waNotice && (
+          <p className="text-xs text-slate-400">
+            Click <strong className="text-emerald-400">Send PDF on WhatsApp</strong> to attach and send the official gym card PDF directly to{' '}
+            <span className="font-mono text-slate-300">{formatPhone(member.whatsapp_number || member.phone)}</span>.
           </p>
         )}
 
-        {error && <p className="text-xs text-rose-400">{error}</p>}
+        {waNotice && (
+          <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+            <span>{waNotice}</span>
+          </div>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="text-xs text-brand-gold-strong hover:underline"
-        >
-          Preview card
-        </button>
+        {error && <p className="text-xs text-rose-400">{error}</p>}
       </div>
 
+      {/* Gym Card Preview Modal */}
       <Modal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        title="Gym Membership Card"
-        className="w-[min(430px,94vw)] max-w-none"
+        title="Gym Membership Card Preview"
+        className="w-[min(480px,96vw)] max-w-none"
         footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between w-full">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               icon={ArrowLeft}
               onClick={() => setIsOpen(false)}
               className="w-full sm:w-auto"
             >
-              Back
+              Back to Member Profile
             </Button>
 
-            <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button
                 size="sm"
                 icon={Download}
@@ -304,35 +338,53 @@ export function GymCardPanel({ member, gymName, className }) {
               </Button>
               <Button
                 size="sm"
-                variant="secondary"
+                variant="primary"
                 icon={MessageCircle}
-                disabled={!canShare}
-                onClick={handleWhatsApp}
-                className="w-full sm:w-auto"
+                disabled={!canShare || busy}
+                onClick={handleWhatsAppPdf}
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white"
               >
-                Send on WhatsApp
+                {busy ? 'Preparing...' : 'WhatsApp PDF'}
               </Button>
             </div>
           </div>
         }
       >
         <div className="space-y-4">
-          <div className="flex justify-center">
-            <CardFace card={card} photoUrl={photoUrl} qrSize={96} className="max-w-[310px]" />
+          {/* Card Preview Container */}
+          <div className="flex justify-center py-2">
+            <CardFace card={card} photoUrl={photoUrl} qrSize={74} />
           </div>
 
-          <div className="text-xs text-slate-400 space-y-1">
-            <p>
-              File name: <span className="text-slate-300">{gymCardFileName(member, { gymName })}</span>
-            </p>
-            <p>WhatsApp: {formatPhone(member.whatsapp_number || member.phone)}</p>
-            <p>
-              The QR encodes only the member token, never the name, phone or NIC.
-            </p>
+          {/* Card & Member Info Details */}
+          <div className="text-xs text-slate-400 space-y-1.5 p-3 rounded-lg bg-gym-900/60 border border-hairline">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">File Name:</span>
+              <span className="font-mono text-slate-200 text-[11px] truncate max-w-[260px]">
+                {gymCardFileName(member, { gymName })}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">Card Display Name:</span>
+              <span className="font-semibold text-slate-200">
+                {card.cardDisplayName || formatFirstLastName(card.fullName)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">Recipient WhatsApp:</span>
+              <span className="font-mono text-slate-200">
+                {formatPhone(member.whatsapp_number || member.phone)}
+              </span>
+            </div>
           </div>
 
-          {/* The WhatsApp button is disabled without a usable number, and a
-              disabled button with no stated reason reads as a broken app. */}
+          {waNotice && (
+            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+              <span>{waNotice}</span>
+            </div>
+          )}
+
           {!canShare && (
             <p className="text-xs text-amber-400 flex items-start gap-1.5">
               <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" />

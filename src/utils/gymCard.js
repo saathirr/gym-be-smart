@@ -62,6 +62,32 @@ export const GYM_CARD_CSS_HEIGHT = Math.round(
 );
 
 /**
+ * Formats a member's full name to show only First Name and Last Name on the gym card.
+ *
+ * Example:
+ *   "Kasun Kalhara Perera" -> "Kasun Perera"
+ *   "Mohamed Saathir Abdul Careem" -> "Mohamed Careem"
+ *   "Mohamed Saathir" -> "Mohamed Saathir"
+ *   "Saathir" -> "Saathir"
+ */
+export function formatFirstLastName(fullName) {
+  if (!fullName) return 'Member';
+  const clean = String(fullName).trim();
+  if (!clean) return 'Member';
+
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return clean;
+
+  // Filter out leading initials with dots like "M." or single letters
+  const nonInitials = parts.filter((p) => !/^[A-Za-z]\.?$/.test(p));
+  if (nonInitials.length >= 2) {
+    return `${nonInitials[0]} ${nonInitials[nonInitials.length - 1]}`;
+  }
+
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+/**
  * The one and only object the card and the PDF are allowed to read.
  *
  * Everything is passed through `display()` so the values are already safe to
@@ -75,10 +101,13 @@ export function buildGymCardData(member, { gymName = CLUB_DISPLAY_NAME, currency
     ? member.plan_name
     : 'No Active Plan';
 
+  const rawName = member.full_name || 'Member';
+
   return {
     clubName: gymName || CLUB_DISPLAY_NAME,
     displayName: CLUB_DISPLAY_NAME,
-    fullName: member.full_name || 'Member',
+    fullName: rawName,
+    cardDisplayName: formatFirstLastName(rawName),
     memberCode: member.member_code || 'N/A',
     planName: plan,
     // Only the entitlement, never the underlying membership row.

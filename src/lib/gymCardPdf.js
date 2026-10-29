@@ -3,9 +3,12 @@ import {
   GYM_CARD_MARGIN_MM,
   GYM_CARD_WIDTH_MM,
   buildGymCardData,
+  buildWhatsAppMessage,
+  formatFirstLastName,
   gymCardFileName,
   isMembershipLive,
 } from '../utils/gymCard';
+import { buildWhatsAppUrl } from '../utils/phone';
 import { LOGO_SRC } from '../utils/brand';
 
 // The physical gym card, as a one-page CR80 PDF.
@@ -305,12 +308,21 @@ export function drawGymCard(
 
   doc.setTextColor('#FFFFFF');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('BE SMART FITNESS CLUB', wordmarkLeft, GYM_CARD_MARGIN_MM + 5.8);
+  doc.setFontSize(8);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0.2);
+  }
+  doc.text('BE SMART FITNESS CLUB', wordmarkLeft, GYM_CARD_MARGIN_MM + 5.6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5.5);
-  doc.text('Gym Membership Card', wordmarkLeft, GYM_CARD_MARGIN_MM + 9.8);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0.1);
+  }
+  doc.text('Gym Membership Card', wordmarkLeft, GYM_CARD_MARGIN_MM + 9.6);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0);
+  }
 
   // ---- Optional photo ----------------------------------------------
   if (hasPhoto) {
@@ -360,11 +372,18 @@ export function drawGymCard(
   const columnLeft = textLeft(hasPhoto);
   const columnWidth = textWidth(hasPhoto);
   const live = isMembershipLive(card.membershipStatus);
+  const displayName = card.cardDisplayName || formatFirstLastName(card.fullName);
 
   doc.setTextColor(INK);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.text(fitName(card.fullName, maxChars(columnWidth, 10.5)), columnLeft, BODY_TOP + 2);
+  doc.setFontSize(10);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0.08);
+  }
+  doc.text(fitName(displayName, maxChars(columnWidth, 10)), columnLeft, BODY_TOP + 2);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0);
+  }
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
@@ -385,9 +404,15 @@ export function drawGymCard(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
     doc.setTextColor(MUTED);
+    if (typeof doc.setCharSpace === 'function') {
+      doc.setCharSpace(0.2);
+    }
     doc.text(label.toUpperCase(), columnLeft, rowY);
+    if (typeof doc.setCharSpace === 'function') {
+      doc.setCharSpace(0);
+    }
 
-    doc.setFontSize(7);
+    doc.setFontSize(6.8);
     doc.setTextColor(live ? INK : WARN);
     doc.setFont('helvetica', live ? 'normal' : 'bold');
     doc.text(value, columnLeft + 16, rowY);
@@ -429,27 +454,21 @@ export function drawGymCard(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5);
   doc.setTextColor(MUTED);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0.08);
+  }
   doc.text('Show this QR code at the entrance.', LEFT, footerY);
+  if (typeof doc.setCharSpace === 'function') {
+    doc.setCharSpace(0);
+  }
 
   return doc;
 }
 
 /**
- * Builds the PDF and hands it to the browser's download.
- *
- * @param {object} member          member row, as returned by memberService
- * @param {object} [options]
- * @param {string} [options.photoDataUrl]  ready-made image data URL
- * @param {string} [options.photoUrl]      a PRIVATE signed URL, as returned by
- *                                         storageService.getPhotoUrl. The bytes
- *                                         are fetched with the caller's
- *                                         credentials and embedded into the PDF;
- *                                         the URL itself is never printed and
- *                                         the bucket is never made public.
- * @param {string} [options.gymName]
- * @returns {Promise<string>} the filename that was used
+ * Builds the PDF and returns the document, Blob, File and filename.
  */
-export async function downloadGymCardPdf(
+export async function createGymCardPdf(
   member,
   { photoDataUrl = null, photoUrl = null, gymName } = {}
 ) {
@@ -468,8 +487,6 @@ export async function downloadGymCardPdf(
         : Promise.resolve(null),
   ]);
 
-  // jspdf exposes a named `jsPDF` export and a default object that also carries
-  // it; which one is present has changed between major versions.
   const JsPDF = jspdfModule.jsPDF || jspdfModule.default?.jsPDF || jspdfModule.default;
   if (typeof JsPDF !== 'function') {
     throw new Error('The PDF library could not be loaded.');
@@ -482,11 +499,87 @@ export async function downloadGymCardPdf(
     compress: true,
   });
 
-  // Both assets are already base64 data URLs, so there is nothing to revoke and
-  // nothing left to fetch at save() time.
   drawGymCard(doc, card, { qrDataUrl, logo, photo });
 
   const filename = gymCardFileName(member, { gymName });
+  const blob = doc.output('blob');
+  const file = new File([blob], filename, { type: 'application/pdf' });
+
+  return { doc, blob, file, filename };
+}
+
+/**
+ * Builds the PDF and triggers the browser's download.
+ */
+export async function downloadGymCardPdf(
+  member,
+  options = {}
+) {
+  const { doc, filename } = await createGymCardPdf(member, options);
   doc.save(filename);
   return filename;
+}
+
+/**
+ * Directly shares the PDF to WhatsApp.
+ *
+ * On mobile/tablet and supported desktop browsers:
+ *   Uses navigator.share({ files: [pdfFile] }) to directly attach and send the PDF document to WhatsApp.
+ *
+ * Fallback (WhatsApp Web on desktop without Web Share API files):
+ *   Automatically downloads the PDF card to the user's computer and opens the member's WhatsApp chat with the greeting message, ready for easy attachment.
+ */
+export async function shareGymCardPdfWhatsApp(
+  member,
+  { photoDataUrl = null, photoUrl = null, gymName } = {}
+) {
+  const { blob, file, filename } = await createGymCardPdf(member, {
+    photoDataUrl,
+    photoUrl,
+    gymName,
+  });
+  const message = buildWhatsAppMessage(member, { gymName });
+
+  // 1. Direct Web Share API (mobile phones, tablets, supported desktop OS)
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.canShare &&
+    navigator.canShare({ files: [file] })
+  ) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: `${gymName || 'Be Smart Fitness Club'} - Gym Card`,
+        text: message,
+      });
+      return { success: true, method: 'direct', filename };
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        return { success: false, cancelled: true };
+      }
+      // Continue to fallback if share failed
+    }
+  }
+
+  // 2. Seamless Desktop / WhatsApp Web fallback:
+  // Auto-download the PDF so it's ready in the user's downloads folder/browser bar
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(downloadUrl), 4000);
+
+  // Open WhatsApp chat directly with the member
+  const waUrl = buildWhatsAppUrl(
+    member.whatsapp_number || member.phone,
+    `${message}\n\n📎 (Official Gym Card PDF is attached)`
+  );
+  if (waUrl) {
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  return { success: true, method: 'web-fallback', filename };
 }

@@ -2,9 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   drawGymCard,
   downloadGymCardPdf,
+  createGymCardPdf,
+  shareGymCardPdfWhatsApp,
   imageFormatFromMime,
 } from './gymCardPdf';
-import { GYM_CARD_HEIGHT_MM, GYM_CARD_WIDTH_MM, buildGymCardData } from '../utils/gymCard';
+import {
+  GYM_CARD_HEIGHT_MM,
+  GYM_CARD_WIDTH_MM,
+  buildGymCardData,
+  formatFirstLastName,
+} from '../utils/gymCard';
 
 // jsPDF is a drawing API, so the useful assertions are about WHAT gets drawn and
 // WHERE. A stub that records every call lets the layout be checked without a
@@ -27,6 +34,7 @@ function createStubDoc() {
     setDrawColor() {},
     setLineWidth() {},
     setTextColor() {},
+    setCharSpace() {},
     setFont: (family, style) => calls.setFont.push([family, style]),
     setFontSize: (size) => calls.setFontSize.push(size),
     text: (value, x, y, options) => calls.text.push({ value: String(value), x, y, options }),
@@ -72,6 +80,9 @@ const PHOTO = 'data:image/jpeg;base64,BBBB';
 
 function draw(overrides = {}, cardOverrides = {}) {
   const card = { ...buildGymCardData(member), ...cardOverrides };
+  if (cardOverrides.fullName !== undefined) {
+    card.cardDisplayName = formatFirstLastName(cardOverrides.fullName);
+  }
   const { doc, calls } = createStubDoc();
   drawGymCard(doc, card, overrides);
   return calls;
@@ -287,9 +298,11 @@ describe('gym card QR block', () => {
 
 describe('gym card name handling', () => {
   it('trims a long name with an ellipsis instead of letting it overflow', () => {
-    const text = allText(draw({}, { fullName: 'Bandaranaike Wickramasinghe Jayawardena' }));
+    const text = allText(
+      draw({}, { fullName: 'Bandaranaike-Wickramasinghe Jayawardena-Wijeratne' })
+    );
     expect(text).toContain('…');
-    expect(text).not.toContain('Jayawardena');
+    expect(text).not.toContain('Wijeratne');
   });
 
   it('keeps a short name intact', () => {
@@ -306,3 +319,11 @@ describe('gym card name handling', () => {
     expect(allText(draw({}, { fullName: 'Member' }))).toContain('Member');
   });
 });
+
+describe('createGymCardPdf and shareGymCardPdfWhatsApp', () => {
+  it('throws an error if member is missing', async () => {
+    await expect(createGymCardPdf(null)).rejects.toThrow(/no member/i);
+    await expect(shareGymCardPdfWhatsApp(null)).rejects.toThrow(/no member/i);
+  });
+});
+

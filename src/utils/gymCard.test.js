@@ -12,6 +12,7 @@ import {
   GYM_CARD_VISIBLE_FIELDS,
   buildGymCardData,
   buildWhatsAppMessage,
+  formatFirstLastName,
   gymCardFileName,
   initialsOf,
   isMembershipLive,
@@ -249,3 +250,33 @@ describe('the shipped logo is what the card and PDF use', () => {
     expect(readFileSync(logo).length).toBeGreaterThan(0);
   });
 });
+
+describe('formatFirstLastName', () => {
+  it('extracts first and last name when given three or more names', () => {
+    expect(formatFirstLastName('Kasun Kalhara Perera')).toBe('Kasun Perera');
+    expect(formatFirstLastName('Mohamed Saathir Abdul Careem')).toBe('Mohamed Careem');
+    expect(formatFirstLastName('Warnakulasuriya Dilhani Silva')).toBe('Warnakulasuriya Silva');
+  });
+
+  it('preserves names that already have only two parts', () => {
+    expect(formatFirstLastName('Mohamed Saathir')).toBe('Mohamed Saathir');
+    expect(formatFirstLastName('Kasun Perera')).toBe('Kasun Perera');
+  });
+
+  it('preserves single-name members', () => {
+    expect(formatFirstLastName('Saathir')).toBe('Saathir');
+    expect(formatFirstLastName('Cher')).toBe('Cher');
+  });
+
+  it('handles initials by picking real names when available', () => {
+    expect(formatFirstLastName('K. A. Mohamed Saathir')).toBe('Mohamed Saathir');
+    expect(formatFirstLastName('M. Saathir')).toBe('M. Saathir');
+  });
+
+  it('returns Member for empty or null inputs', () => {
+    expect(formatFirstLastName('')).toBe('Member');
+    expect(formatFirstLastName(null)).toBe('Member');
+    expect(formatFirstLastName(undefined)).toBe('Member');
+  });
+});
+
