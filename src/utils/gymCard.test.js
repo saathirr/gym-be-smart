@@ -146,18 +146,26 @@ describe('GYM_CARD_VISIBLE_FIELDS', () => {
 describe('buildWhatsAppMessage', () => {
   const message = buildWhatsAppMessage(member, { gymName: 'Be Smart Fitness Club' });
 
-  it('greets the player by name', () => {
-    expect(message).toContain('Hello Mohamed Saathir,');
+  it('greets the player by name with emoji', () => {
+    expect(message).toContain('Hello Mohamed Saathir! 👋');
   });
 
-  it('states the club and the member id', () => {
+  it('states the club title and unique member id', () => {
+    expect(message).toContain('WELCOME TO BE SMART FITNESS CLUB!');
     expect(message).toContain('Be Smart Fitness Club');
-    expect(message).toContain('Member ID: BSG-1001');
+    expect(message).toContain('*Member ID:* BSG-1001');
   });
 
-  it('includes the plan and the valid-until date', () => {
-    expect(message).toContain('Membership: Monthly');
-    expect(message).toContain('Valid until: 2026-10-20');
+  it('includes the plan and the formatted valid-until date', () => {
+    expect(message).toContain('*Membership Plan:* Monthly');
+    expect(message).toContain('*Valid Until:* 20 October 2026');
+  });
+
+  it('includes official entry instructions and gym motto', () => {
+    expect(message).toContain('Please present your membership QR code at the entrance');
+    expect(message).toContain('Train Hard. Stay Strong. Be Smart.');
+    expect(message).toContain('Stay Consistent. Stay Fit. Stay Strong!');
+    expect(message).toContain('Be Smart Fitness Club Management');
   });
 
   it('does not leak the NIC, address or phone number', () => {
@@ -166,18 +174,18 @@ describe('buildWhatsAppMessage', () => {
     expect(message).not.toContain('0771234567');
   });
 
-  it('omits the optional lines when the data is missing', () => {
+  it('handles sparse data cleanly without breaking', () => {
     const sparse = buildWhatsAppMessage(
       { full_name: 'X Y', member_code: 'BSG-9', plan_name: null, expiration_date: null },
       { gymName: 'Be Smart Fitness Club' }
     );
-    expect(sparse).not.toContain('Membership:');
-    expect(sparse).not.toContain('Valid until:');
-    expect(sparse).toContain('Member ID: BSG-9');
+    expect(sparse).toContain('*Membership Plan:* General Membership');
+    expect(sparse).toContain('*Valid Until:* N/A');
+    expect(sparse).toContain('*Member ID:* BSG-9');
   });
 
   it('falls back to a neutral greeting with no name', () => {
-    expect(buildWhatsAppMessage({ member_code: 'BSG-1' })).toContain('Hello there,');
+    expect(buildWhatsAppMessage({ member_code: 'BSG-1' })).toContain('Hello Valued Member! 👋');
   });
 });
 

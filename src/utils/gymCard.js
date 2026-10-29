@@ -5,6 +5,7 @@
 // wording and the filename rules can be unit tested without a DOM.
 
 import { CLUB_DISPLAY_NAME } from './brand';
+import { formatDate } from './formatters';
 
 // CR80, the ISO/IEC 7810 ID-1 size every card printer and laminator takes.
 // 85.6 x 54 mm, with a 3.18 mm bleed-friendly margin built into the layout.
@@ -158,33 +159,55 @@ export function gymCardImageFileName(member, { gymName = CLUB_DISPLAY_NAME, ext 
 }
 
 /**
- * The message staff send with the card PDF.
+ * Official welcome and gym card message sent to members via WhatsApp.
  *
- * Kept short on purpose: it is opened on a phone, and the member has already
- * received their code. The PDF is attached by hand, because a browser cannot
- * silently hand a local file to WhatsApp.
+ * Formatted with club branding, personalized member details, unique member ID,
+ * active membership plan, formatted expiration date, and entry instructions.
  */
 export function buildWhatsAppMessage(member, { gymName = CLUB_DISPLAY_NAME } = {}) {
-  const name = member?.full_name?.trim() || 'there';
-  const code = member?.member_code?.trim();
-  const plan = member?.plan_name && member.plan_name !== 'No Active Plan'
-    ? member.plan_name
-    : null;
-  const validUntil = member?.expiration_date;
+  const name = member?.full_name?.trim() || 'Valued Member';
+  const code = member?.member_code?.trim() || 'N/A';
+  const plan =
+    member?.plan_name && member.plan_name !== 'No Active Plan'
+      ? member.plan_name
+      : 'General Membership';
+
+  let expiry = 'N/A';
+  if (member?.expiration_date) {
+    const formatted = formatDate(member.expiration_date, 'd MMMM yyyy');
+    expiry = formatted === 'Invalid Date' ? String(member.expiration_date) : formatted;
+  }
+
+  const gym = gymName || CLUB_DISPLAY_NAME || 'Be Smart Fitness Club';
+  const gymUpper = gym.toUpperCase();
 
   const lines = [
-    `Hello ${name},`,
+    `💪 *WELCOME TO ${gymUpper}!* 🏋️‍♂️`,
     '',
-    `Welcome to ${gymName || CLUB_DISPLAY_NAME}.`,
+    `Hello ${name}! 👋`,
     '',
-    'Here is your official Gym Membership Card.',
+    'Congratulations on taking a step towards a stronger, healthier, and fitter lifestyle! 🔥',
+    '',
+    `Welcome to *${gym}*, where your fitness journey becomes our priority. We're excited to have you as a member of our fitness community!`,
+    '',
+    '🎫 *YOUR OFFICIAL MEMBERSHIP DETAILS*',
+    '',
+    `👤 *Member Name:* ${name}`,
+    `🆔 *Member ID:* ${code}`,
+    `💳 *Membership Plan:* ${plan}`,
+    `📅 *Valid Until:* ${expiry}`,
+    '',
+    '📲 *Entry Instructions:*',
+    'Please present your membership QR code at the entrance whenever you visit the gym.',
+    '',
+    '🔥 *Train Hard. Stay Strong. Be Smart.*',
+    '',
+    `Thank you for choosing *${gym}*. We look forward to supporting you on your fitness journey!`,
+    '',
+    '*Stay Consistent. Stay Fit. Stay Strong!* 💪',
+    '',
+    `*— ${gym} Management*`,
   ];
-
-  if (code) lines.push(`Member ID: ${code}`);
-  if (plan) lines.push(`Membership: ${plan}`);
-  if (validUntil) lines.push(`Valid until: ${validUntil}`);
-
-  lines.push('', 'Please show the QR code at the entrance. Thank you.');
 
   return lines.join('\n');
 }

@@ -22,6 +22,7 @@ import {
 import { formatPhone, normalisePhone } from '../../utils/phone';
 import { downloadGymCardPdf, shareGymCardPdfWhatsApp } from '../../lib/gymCardPdf';
 import { downloadGymCardJpg, shareGymCardJpgWhatsApp } from '../../lib/gymCardImage';
+import { shareGymCardWhatsApp } from '../../lib/gymCardShare';
 import { storageService } from '../../services/storageService';
 import { LOGO_SRC } from '../../utils/brand';
 import { cn } from '../../utils/cn';
@@ -217,8 +218,8 @@ export function GymCardPanel({ member, gymName, className }) {
     }
   }
 
-  async function handleWhatsApp(format = 'jpg') {
-    setBusy(`wa-${format}`);
+  async function handleWhatsApp() {
+    setBusy('wa');
     setError(null);
     setWaNotice(null);
     try {
@@ -226,18 +227,23 @@ export function GymCardPanel({ member, gymName, className }) {
         ? await storageService.getPhotoUrl(member.avatar_url)
         : null;
 
-      const result =
-        format === 'pdf'
-          ? await shareGymCardPdfWhatsApp(member, { gymName, photoUrl: freshPhotoUrl })
-          : await shareGymCardJpgWhatsApp(member, { gymName, photoUrl: freshPhotoUrl });
+      const result = await shareGymCardWhatsApp(member, {
+        gymName,
+        photoUrl: freshPhotoUrl,
+      });
 
-      const label = format.toUpperCase();
-      if (result?.method === 'web-fallback') {
+      if (result?.cancelled) {
+        return;
+      }
+
+      if (result?.method === 'direct') {
+        setWaNotice('Gym Card JPG & PDF sent directly to WhatsApp with welcome greeting!');
+      } else if (result?.method === 'direct-jpg-with-pdf-download') {
+        setWaNotice('Gym Card JPG shared to WhatsApp & PDF card downloaded! Both formats ready.');
+      } else if (result?.method === 'web-fallback') {
         setWaNotice(
-          `${label} card downloaded & WhatsApp chat opened! Simply drag or attach (📎) the downloaded ${label} into WhatsApp.`
+          'Card JPG & PDF downloaded! WhatsApp chat opened with your welcome message — simply attach (📎) the downloaded card files.'
         );
-      } else if (result?.method === 'direct') {
-        setWaNotice(`Gym Card ${label} sent directly to WhatsApp!`);
       }
     } catch (err) {
       setError(err.message || 'Failed to share gym card via WhatsApp.');
@@ -297,10 +303,10 @@ export function GymCardPanel({ member, gymName, className }) {
             variant="primary"
             icon={MessageCircle}
             disabled={!canShare || Boolean(busy)}
-            onClick={() => handleWhatsApp('jpg')}
+            onClick={handleWhatsApp}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium border-emerald-500/30"
           >
-            {typeof busy === 'string' && busy.startsWith('wa') ? 'Sending...' : 'Send on WhatsApp'}
+            {busy === 'wa' ? 'Sending...' : 'Send on WhatsApp'}
           </Button>
 
           <Button
@@ -325,7 +331,7 @@ export function GymCardPanel({ member, gymName, className }) {
 
         {canShare && !waNotice && (
           <p className="text-xs text-slate-400">
-            Click <strong className="text-emerald-400">Download JPG</strong> for instant image file, or <strong className="text-emerald-400">Send on WhatsApp</strong> to share directly with{' '}
+            Click <strong className="text-emerald-400">Send on WhatsApp</strong> to send both <strong className="text-slate-200">JPG & PDF cards</strong> with the welcome greeting directly to{' '}
             <span className="font-mono text-slate-300">{formatPhone(member.whatsapp_number || member.phone)}</span>.
           </p>
         )}
@@ -385,10 +391,10 @@ export function GymCardPanel({ member, gymName, className }) {
                 variant="primary"
                 icon={MessageCircle}
                 disabled={!canShare || Boolean(busy)}
-                onClick={() => handleWhatsApp('jpg')}
+                onClick={handleWhatsApp}
                 className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white"
               >
-                {typeof busy === 'string' && busy.startsWith('wa') ? 'Sending...' : 'WhatsApp Card'}
+                {busy === 'wa' ? 'Sending...' : 'WhatsApp Card'}
               </Button>
             </div>
           </div>

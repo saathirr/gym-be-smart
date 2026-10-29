@@ -583,3 +583,5 @@ export async function shareGymCardPdfWhatsApp(
 
   return { success: true, method: 'web-fallback', filename };
 }
+
+export { shareGymCardWhatsApp } from './gymCardShare';

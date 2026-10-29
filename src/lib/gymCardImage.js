@@ -389,3 +389,5 @@ export async function shareGymCardJpgWhatsApp(
 
   return { success: true, method: 'web-fallback', filename };
 }
+
+export { shareGymCardWhatsApp } from './gymCardShare';
